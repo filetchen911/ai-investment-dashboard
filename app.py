@@ -2,7 +2,7 @@
 
 
 # ========================================================
-#  版本：v1.5.1 - 最終部署版
+#  版本：v1.5.2 - 超級診斷版
 # ========================================================
 
 # --- 核心導入 ---
@@ -15,9 +15,48 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import base64 # 導入 base64
+import base64
 
-APP_VERSION = "v1.5.1"
+APP_VERSION = "v1.5.2 (Super-Debug)"
+
+# --- [重大修改] 超級診斷模式 ---
+try:
+    st.subheader("Secrets 診斷資訊")
+    
+    # 打印出 Streamlit 偵測到的所有 Secrets 的「鍵名」列表
+    available_keys = list(st.secrets.keys())
+    st.write("Streamlit App 實際讀取到的 Secrets 鍵名 (Keys):")
+    st.write(available_keys)
+
+    # 嘗試讀取我們需要的密鑰
+    firebase_config = st.secrets["firebase_config"]
+    base64_encoded_key = st.secrets["fb_key"] # 我們繼續使用極簡鍵名
+
+    # 如果能執行到這裡，代表密鑰都找到了
+    st.success("✅ 成功找到 firebase_config 和 fb_key！")
+
+    # --- 接下來是解碼和初始化過程 ---
+    decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
+    service_account_info = json.loads(decoded_key_str)
+
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(service_account_info)
+        firebase_admin.initialize_app(cred)
+    
+    db = firestore.client()
+    st.success("✅ Firebase 初始化成功！")
+    
+except KeyError as e:
+    st.error(f"❌ 密鑰讀取失敗 (KeyError)：系統在 st.secrets 中找不到指定的鍵名。")
+    st.error(f"詳細錯誤：{e}")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ 發生未預期的錯誤。")
+    st.error(f"詳細錯誤: {e}")
+    st.stop()
+
+# --- 頁面主要內容的分隔線 ---
+st.markdown("---")
 
 # --- [最終版] 從 Streamlit Secrets 讀取並用 Base64 解碼 ---
 try:
