@@ -2,7 +2,7 @@
 
 
 # ========================================================
-#  版本：v1.5.2 - 超級診斷版
+#  版本：v1.6.0 - 密鑰重組版
 # ========================================================
 
 # --- 核心導入 ---
@@ -15,78 +15,48 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import base64
 
-APP_VERSION = "v1.5.2 (Super-Debug)"
+APP_VERSION = "v1.6.0"
 
-# --- [重大修改] 超級診斷模式 ---
+# --- [最終版] 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
-    st.subheader("Secrets 診斷資訊")
-    
-    # 打印出 Streamlit 偵測到的所有 Secrets 的「鍵名」列表
-    available_keys = list(st.secrets.keys())
-    st.write("Streamlit App 實際讀取到的 Secrets 鍵名 (Keys):")
-    st.write(available_keys)
-
-    # 嘗試讀取我們需要的密鑰
+    # 讀取 firebase_config 表
     firebase_config = st.secrets["firebase_config"]
-    base64_encoded_key = st.secrets["fb_key"] # 我們繼續使用極簡鍵名
 
-    # 如果能執行到這裡，代表密鑰都找到了
-    st.success("✅ 成功找到 firebase_config 和 fb_key！")
+    # 從 secrets 重組 service_account 字典
+    # Streamlit 會將 [firebase_service_account] 這個 table 解析成一個類字典物件
+    # 我們可以直接透過 st.secrets.firebase_service_account.key 的方式來訪問
+    service_account_info = {
+        "type": st.secrets.firebase_service_account.type,
+        "project_id": st.secrets.firebase_service_account.project_id,
+        "private_key_id": st.secrets.firebase_service_account.private_key_id,
+        "private_key": st.secrets.firebase_service_account.private_key,
+        "client_email": st.secrets.firebase_service_account.client_email,
+        "client_id": st.secrets.firebase_service_account.client_id,
+        "auth_uri": st.secrets.firebase_service_account.auth_uri,
+        "token_uri": st.secrets.firebase_service_account.token_uri,
+        "auth_provider_x509_cert_url": st.secrets.firebase_service_account.auth_provider_x509_cert_url,
+        "client_x509_cert_url": st.secrets.firebase_service_account.client_x509_cert_url,
+        "universe_domain": st.secrets.firebase_service_account.universe_domain
+    }
 
-    # --- 接下來是解碼和初始化過程 ---
-    decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
-    service_account_info = json.loads(decoded_key_str)
-
+    # --- Firebase Admin SDK 初始化 ---
     if not firebase_admin._apps:
         cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
-    
+
     db = firestore.client()
-    st.success("✅ Firebase 初始化成功！")
-    
-except KeyError as e:
-    st.error(f"❌ 密鑰讀取失敗 (KeyError)：系統在 st.secrets 中找不到指定的鍵名。")
-    st.error(f"詳細錯誤：{e}")
-    st.stop()
+    # st.success("✅ Firebase 初始化成功！") # 部署成功後可移除
+
 except Exception as e:
-    st.error(f"❌ 發生未預期的錯誤。")
+    st.error("⚠️ Secrets 配置錯誤或 Firebase 初始化失敗。")
     st.error(f"詳細錯誤: {e}")
+    st.write("請仔細檢查 Streamlit Cloud Secrets 中的每一個欄位是否都已從您的 JSON 檔案中正確複製。")
     st.stop()
+
 
 # --- 頁面主要內容的分隔線 ---
 st.markdown("---")
-
-# --- [最終版] 從 Streamlit Secrets 讀取並用 Base64 解碼 ---
-try:
-    firebase_config = st.secrets["firebase_config"]
-
-    # 使用極簡鍵名 fb_key
-    base64_encoded_key = st.secrets["fb_key"]
-
-    # 將 Base64 字串解碼還原成原始的 JSON 字串
-    decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
-
-    # 將 JSON 字串轉換為 Python 字典
-    service_account_info = json.loads(decoded_key_str)
-
-except Exception as e:
-    st.error("⚠️ Secrets 配置錯誤或解碼失敗。請檢查設定。")
-    st.error(f"詳細錯誤: {e}")
-    st.stop()
-
-
-# --- Firebase Admin SDK 初始化 ---
-if not firebase_admin._apps:
-    try:
-        cred = credentials.Certificate(service_account_info)
-        firebase_admin.initialize_app(cred)
-    except Exception as e:
-        st.error(f"Firebase Admin SDK 初始化失敗: {e}")
-        st.stop()
-
-db = firestore.client()
 
 # --- [升級版] 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
