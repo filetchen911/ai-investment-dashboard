@@ -17,7 +17,6 @@ import os
 import requests
 import json
 import yfinance as yf
-import twstock
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
