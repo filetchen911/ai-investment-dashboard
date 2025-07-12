@@ -1,12 +1,7 @@
 # app.py
 
 # ========================================================
-#  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v1.4.0 - Streamlit Cloud 部署版
-#  功能：
-#  - 從 Streamlit Secrets 讀取金鑰，安全部署
-#  - 統一使用 yfinance 獲取報價，移除 twstock
-#  - 保留 v1.3.1 的所有核心功能
+#  版本：v1.4.1 - Secrets 解析修正版
 # ========================================================
 
 # --- 核心導入 ---
@@ -19,19 +14,30 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+import ast # <--- [新增] 導入 ast 函式庫
 
-# --- [重大修改] 從 Streamlit Secrets 讀取配置 ---
+APP_VERSION = "v1.4.1"
+
+# --- [重大修改] 從 Streamlit Secrets 讀取並解析配置 ---
 try:
+    # firebase_config 是一個表格 (Table)，Streamlit 會正確解析為類字典物件
     firebase_config = st.secrets["firebase_config"]
-    service_account_info = st.secrets["firebase_service_account"]
-except KeyError:
-    st.error("⚠️ 應用程式缺少必要的 Firebase 配置，請在部署時於 Streamlit Cloud 中設定 Secrets。")
-    st.info("如果您是在本地運行，請確保您的 secrets.toml 檔案已正確配置。")
-    st.stop()
+    
+    # 讀取服務帳戶金鑰 "字串"
+    service_account_str = st.secrets["firebase_service_account_str"]
+    
+    # 使用 ast.literal_eval 將字串安全地轉換回字典
+    service_account_info = ast.literal_eval(service_account_str)
 
+except Exception as e:
+    st.error("⚠️ Secrets 配置錯誤或遺失。請檢查 Streamlit Cloud 中的設定。")
+    st.error(f"詳細錯誤: {e}")
+    st.stop()
+    
 # --- Firebase Admin SDK 初始化 ---
 if not firebase_admin._apps:
     try:
+        # 現在 service_account_info 是一個正確的字典格式
         cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
