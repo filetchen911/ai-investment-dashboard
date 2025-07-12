@@ -1,0 +1,11 @@
+# 忽略所有 JSON 金鑰檔案
+*.json
+
+# 忽略我們的本地配置文件
+config.py
+
+# 忽略 Python 的虛擬環境和快取檔案
+__pycache__/
+*.pyc
+.env
+venv/
