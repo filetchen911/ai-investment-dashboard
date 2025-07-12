@@ -1,8 +1,11 @@
 # app.py 
 
+# app.py
 
 # ========================================================
-#  版本：v1.6.1 - 最終部署修正版
+#  個人 AI 投資決策儀表板 - Streamlit App
+#  版本：v1.7.0 - 最終穩定部署版
+#  說明：基於「拆分密鑰」方案的最終、乾淨版本。
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,11 +19,10 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v1.6.1"
+APP_VERSION = "v1.7.0"
 
 # --- [最終版] 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
-    # 讀取 firebase_config 表
     firebase_config = st.secrets["firebase_config"]
 
     # 從 secrets 重組 service_account 字典
@@ -28,7 +30,7 @@ try:
         "type": st.secrets.firebase_service_account.type,
         "project_id": st.secrets.firebase_service_account.project_id,
         "private_key_id": st.secrets.firebase_service_account.private_key_id,
-        "private_key": st.secrets.firebase_service_account.private_key,
+        "private_key": st.secrets.firebase_service_account.private_key.replace('\\n', '\n'),
         "client_email": st.secrets.firebase_service_account.client_email,
         "client_id": st.secrets.firebase_service_account.client_id,
         "auth_uri": st.secrets.firebase_service_account.auth_uri,
@@ -37,12 +39,6 @@ try:
         "client_x509_cert_url": st.secrets.firebase_service_account.client_x509_cert_url,
         "universe_domain": st.secrets.firebase_service_account.universe_domain
     }
-    
-    # --- [最終魔法修正] ---
-    # 將 private_key 中的 "\\n" 字串替換為真正的換行符 "\n"
-    # 這一步至關重要，是為了解決 PEM 檔案格式問題
-    service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
-    # ----------------------
 
     # --- Firebase Admin SDK 初始化 ---
     if not firebase_admin._apps:
@@ -50,17 +46,12 @@ try:
         firebase_admin.initialize_app(cred)
 
     db = firestore.client()
-    st.success("✅ Firebase 初始化成功！") # 我們留下這個成功訊息來驗證
 
 except Exception as e:
     st.error("⚠️ Secrets 配置錯誤或 Firebase 初始化失敗。")
     st.error(f"詳細錯誤: {e}")
-    st.write("請仔細檢查 Streamlit Cloud Secrets 中的每一個欄位是否都已從您的 JSON 檔案中正確複製。")
     st.stop()
 
-
-# --- 頁面主要內容的分隔線 ---
-st.markdown("---")
 
 # --- [升級版] 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
