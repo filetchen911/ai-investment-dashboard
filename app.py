@@ -1,7 +1,8 @@
-# app.py
+# app.py 
+
 
 # ========================================================
-#  版本：v1.4.1 - Secrets 解析修正版
+#  版本：v1.5 - Base64 解碼版
 # ========================================================
 
 # --- 核心導入 ---
@@ -14,30 +15,31 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import ast # <--- [新增] 導入 ast 函式庫
+import base64 # <--- [新增] 導入 base64
 
-APP_VERSION = "v1.4.1"
+APP_VERSION = "v1.5.0"
 
-# --- [重大修改] 從 Streamlit Secrets 讀取並解析配置 ---
+# --- [重大修改] 從 Streamlit Secrets 讀取並用 Base64 解碼 ---
 try:
-    # firebase_config 是一個表格 (Table)，Streamlit 會正確解析為類字典物件
     firebase_config = st.secrets["firebase_config"]
     
-    # 讀取服務帳戶金鑰 "字串"
-    service_account_str = st.secrets["firebase_service_account_str"]
+    # 讀取 Base64 編碼後的金鑰字串
+    base64_encoded_key = st.secrets["firebase_service_account_b64"]
     
-    # 使用 ast.literal_eval 將字串安全地轉換回字典
-    service_account_info = ast.literal_eval(service_account_str)
+    # 將 Base64 字串解碼還原成原始的 JSON 字串
+    decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
+    
+    # 將 JSON 字串轉換為 Python 字典
+    service_account_info = json.loads(decoded_key_str)
 
 except Exception as e:
-    st.error("⚠️ Secrets 配置錯誤或遺失。請檢查 Streamlit Cloud 中的設定。")
+    st.error("⚠️ Secrets 配置錯誤或解碼失敗。請檢查設定。")
     st.error(f"詳細錯誤: {e}")
     st.stop()
     
 # --- Firebase Admin SDK 初始化 ---
 if not firebase_admin._apps:
     try:
-        # 現在 service_account_info 是一個正確的字典格式
         cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
     except Exception as e:
