@@ -1,9 +1,8 @@
-# app.py
+# app.py 
+
 
 # ========================================================
-#  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v1.5.0 - 正式部署版
-#  說明：這是基礎設施建構完成後的穩定、乾淨版本。
+#  版本：v1.6.1 - 最終部署修正版
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,16 +15,34 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import base64
 
-APP_VERSION = "v1.5.0"
+APP_VERSION = "v1.6.1"
 
-# --- 從 Streamlit Secrets 讀取並重組金鑰 ---
+# --- [最終版] 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
+    # 讀取 firebase_config 表
     firebase_config = st.secrets["firebase_config"]
-    base64_encoded_key = st.secrets["fb_key"]
-    decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
-    service_account_info = json.loads(decoded_key_str)
+
+    # 從 secrets 重組 service_account 字典
+    service_account_info = {
+        "type": st.secrets.firebase_service_account.type,
+        "project_id": st.secrets.firebase_service_account.project_id,
+        "private_key_id": st.secrets.firebase_service_account.private_key_id,
+        "private_key": st.secrets.firebase_service_account.private_key,
+        "client_email": st.secrets.firebase_service_account.client_email,
+        "client_id": st.secrets.firebase_service_account.client_id,
+        "auth_uri": st.secrets.firebase_service_account.auth_uri,
+        "token_uri": st.secrets.firebase_service_account.token_uri,
+        "auth_provider_x509_cert_url": st.secrets.firebase_service_account.auth_provider_x509_cert_url,
+        "client_x509_cert_url": st.secrets.firebase_service_account.client_x509_cert_url,
+        "universe_domain": st.secrets.firebase_service_account.universe_domain
+    }
+    
+    # --- [最終魔法修正] ---
+    # 將 private_key 中的 "\\n" 字串替換為真正的換行符 "\n"
+    # 這一步至關重要，是為了解決 PEM 檔案格式問題
+    service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
+    # ----------------------
 
     # --- Firebase Admin SDK 初始化 ---
     if not firebase_admin._apps:
@@ -33,21 +50,26 @@ try:
         firebase_admin.initialize_app(cred)
 
     db = firestore.client()
+    st.success("✅ Firebase 初始化成功！") # 我們留下這個成功訊息來驗證
 
 except Exception as e:
     st.error("⚠️ Secrets 配置錯誤或 Firebase 初始化失敗。")
     st.error(f"詳細錯誤: {e}")
+    st.write("請仔細檢查 Streamlit Cloud Secrets 中的每一個欄位是否都已從您的 JSON 檔案中正確複製。")
     st.stop()
 
 
-# --- 後端邏輯函數 ---
+# --- 頁面主要內容的分隔線 ---
+st.markdown("---")
+
+# --- [升級版] 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
-    """獲取單一資產的價格，統一使用 yfinance。"""
+    """[升級版] 獲取單一資產的價格，統一使用 yfinance。"""
     price = None
     try:
         if asset_type.lower() in ["股票", "etf"]:
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period="2d", auto_adjust=True)
+            data = ticker.history(period="2d", auto_adjust=True) # 使用 auto_adjust=True 獲取調整後價格
             if not data.empty and 'Close' in data and not data['Close'].empty:
                 price = data['Close'].iloc[-1]
                 
@@ -57,30 +79,30 @@ def get_price(symbol, asset_type, currency="USD"):
             if symbol.lower() in response and currency.lower() in response[symbol.lower()]:
                 price = response[symbol.lower()][currency.lower()]
     except Exception as e:
-        # 在伺服器日誌中仍然可以打印錯誤，但在 APP 介面上不顯示
-        print(f"ERROR fetching price for {symbol}: {e}")
+        print(f"獲取 {symbol} 報價時出錯: {e}")
     return price
 
 def get_all_symbols_from_firestore():
-    """從所有用戶的資產中收集所有獨一無二的資產代號。"""
     db_client = firestore.client()
     all_symbols_to_fetch = set()
     users_ref = db_client.collection('users')
-    for user_doc in users_ref.stream():
+    users_list = list(users_ref.stream())
+    for user_doc in users_list:
         assets_ref = user_doc.reference.collection('assets')
         for asset_doc in assets_ref.stream():
             asset_data = asset_doc.to_dict()
-            symbol, asset_type, currency = asset_data.get('代號'), asset_data.get('類型'), asset_data.get('幣別')
-            if all([symbol, asset_type, currency]):
+            symbol = asset_data.get('代號')
+            asset_type = asset_data.get('類型')
+            currency = asset_data.get('幣別')
+            if symbol and asset_type and currency:
                 all_symbols_to_fetch.add((symbol, asset_type, currency))
     return list(all_symbols_to_fetch)
 
 def update_quotes_manually():
-    """執行手動報價更新流程，並返回更新的數量。"""
     db_client = firestore.client()
     symbols_to_fetch = get_all_symbols_from_firestore()
     if not symbols_to_fetch:
-        st.toast("資料庫中沒有找到任何資產可供更新。")
+        st.toast("在所有用戶中未找到任何資產可供更新。")
         return 0
 
     quotes_batch = db_client.batch()
@@ -98,7 +120,7 @@ def update_quotes_manually():
                 "Timestamp": firestore.SERVER_TIMESTAMP
             })
             updated_count += 1
-        progress_text = f"正在處理 {symbol}... ({i+1}/{len(symbols_to_fetch)})"
+        progress_text = f"正在更新 {symbol}... ({i+1}/{len(symbols_to_fetch)})"
         progress_bar.progress((i + 1) / len(symbols_to_fetch), text=progress_text)
 
     quotes_batch.commit()
@@ -109,20 +131,25 @@ def update_quotes_manually():
 def signup_user(email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={firebase_config['apiKey']}"
     payload = json.dumps({"email": email, "password": password, "returnSecureToken": True})
-    response_data = requests.post(url, headers={"Content-Type": "application/json"}, data=payload).json()
+    headers = {"Content-Type": "application/json"}
+    response_data = requests.post(url, data=payload, headers=headers).json()
     if "idToken" not in response_data:
-        raise Exception(response_data.get("error", {}).get("message", "註冊失敗"))
+        raise Exception(response_data.get("error", {}).get("message", "註冊失敗，未知錯誤。"))
     user_id = response_data["localId"]
-    db.collection('users').document(user_id).set({
-        'email': response_data["email"], 'created_at': firestore.SERVER_TIMESTAMP,
-        'investment_profile': '通用市場趨勢，風險適中'
-    })
+    try:
+        db.collection('users').document(user_id).set({
+            'email': response_data["email"], 'created_at': firestore.SERVER_TIMESTAMP,
+            'investment_profile': '通用市場趨勢，風險適中'
+        })
+    except Exception as e:
+        raise Exception(f"註冊成功，但建立用戶資料時發生錯誤: {e}")
     return response_data
 
 def login_user(email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={firebase_config['apiKey']}"
     payload = json.dumps({"email": email, "password": password, "returnSecureToken": True})
-    response = requests.post(url, headers={"Content-Type": "application/json"}, data=payload).json()
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(url, data=payload, headers=headers).json()
     if "idToken" in response:
         return response
     else:
@@ -150,17 +177,19 @@ def load_quotes_from_firestore():
     return df
 
 # --- APP 介面與主體邏輯 ---
-st.set_page_config(layout="wide", page_title="我的 AI 投資儀表板")
-st.title("📈 我的 AI 投資儀表板")
+st.set_page_config(layout="wide", page_title="AI 投資儀表板")
+st.title("📈 AI 投資儀表板")
 
-# 側邊欄
+# 側邊欄用戶認證區
 if 'user_id' not in st.session_state:
     st.sidebar.header("歡迎使用")
+    # ... (此處省略認證表單的詳細程式碼，與前版相同) ...
     choice = st.sidebar.radio("請選擇操作", ["登入", "註冊"], horizontal=True)
     with st.sidebar.form("auth_form"):
         email = st.text_input("電子郵件")
         password = st.text_input("密碼", type="password")
-        if st.form_submit_button("執行"):
+        submitted = st.form_submit_button("執行")
+        if submitted:
             if not email or not password:
                 st.sidebar.warning("請輸入電子郵件和密碼。")
             else:
@@ -181,10 +210,12 @@ else:
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
-    st.sidebar.markdown("---")
-    st.sidebar.caption(f"App Version: {APP_VERSION}")
 
-# 主頁面
+    # --- [新增] 在此處顯示版本號 ---
+    st.sidebar.markdown("---") # 畫一條分隔線
+    st.sidebar.caption(f"App Version: {APP_VERSION}") # 使用 caption 或 info 來顯示
+    
+# 主頁面內容 (僅在登入後顯示)
 if 'user_id' in st.session_state:
     st.sidebar.header("導覽")
     page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True)
@@ -192,28 +223,31 @@ if 'user_id' in st.session_state:
     if page == "資產概覽":
         st.header("📊 資產概覽")
         user_id = st.session_state['user_id']
-        
-        col1_action, _ = st.columns([1, 3])
-        if col1_action.button("🔄 立即更新所有報價"):
-            with st.spinner("正在執行報價更新...此過程可能需要一點時間。"):
-                count = update_quotes_manually()
-            st.success(f"報價更新完成！共處理 {count} 筆資產報價。")
-            st.cache_data.clear()
-            st.rerun()
+
+        col1_action, col2_action = st.columns([1,3])
+        with col1_action:
+            if st.button("🔄 立即更新所有報價"):
+                with st.spinner("正在執行報價更新，請稍候...此過程可能需要一點時間。"):
+                    count = update_quotes_manually()
+                st.success(f"報價更新完成！共更新 {count} 筆資產報價。")
+                st.cache_data.clear()
+                st.rerun()
 
         with st.expander("➕ 新增資產"):
             with st.form("add_asset_form", clear_on_submit=True):
+                # ... (新增資產表單) ...
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     asset_type = st.selectbox("類型", ["股票", "ETF", "加密貨幣", "其他"])
-                    symbol = st.text_input("代號", placeholder="例如: TSLA, 0050.TW, bitcoin")
+                    symbol = st.text_input("代號", placeholder="例如: TSLA, 0050.TW, bitcoin, Gold")
                 with c2:
                     quantity = st.number_input("持有數量", min_value=0.0, format="%.4f")
                     cost_basis = st.number_input("平均成本", min_value=0.0, format="%.4f")
                 with c3:
                     currency = st.selectbox("幣別", ["USD", "TWD", "USDT"])
-                    name = st.text_input("自訂名稱(可選)", placeholder="例如: 特斯拉")
-                if st.form_submit_button("確定新增"):
+                    name = st.text_input("自訂名稱(可選)", placeholder="例如: 特斯拉, 元大台灣50")
+                submitted = st.form_submit_button("確定新增")
+                if submitted:
                     if not all([symbol, quantity > 0, cost_basis > 0]):
                         st.error("代號、數量、成本價為必填欄位，且必須大於 0。")
                     else:
@@ -233,6 +267,7 @@ if 'user_id' in st.session_state:
         if assets_df.empty:
             st.info("您目前沒有資產。請使用上方「新增資產」區塊添加您的第一筆資產。")
         else:
+            # --- 數據處理與分類 ---
             df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
             for col in ['Price', '數量', '成本價']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             df['市值'] = df['Price'] * df['數量']
@@ -248,6 +283,8 @@ if 'user_id' in st.session_state:
                 else: return '其他資產'
             df['分類'] = df.apply(classify_asset, axis=1)
             
+            # --- 總覽指標顯示 ---
+            # ... (總覽指標計算與顯示) ...
             total_value_usd = df.apply(lambda r: r['市值'] / 32 if r['幣別'] == 'TWD' else r['市值'], axis=1).sum()
             total_cost_usd = df.apply(lambda r: r['成本'] / 32 if r['幣別'] == 'TWD' else r['成本'], axis=1).sum()
             total_pnl_usd = total_value_usd - total_cost_usd
@@ -259,21 +296,26 @@ if 'user_id' in st.session_state:
             kpi3.metric("報價更新時間 (UTC)", last_updated)
             st.markdown("---")
 
+            # --- 編輯表單邏輯 ---
             if 'editing_asset_id' in st.session_state:
-                asset_to_edit = df[df['doc_id'] == st.session_state['editing_asset_id']].iloc[0]
+                # ... (編輯表單的詳細程式碼) ...
+                asset_id_to_edit = st.session_state['editing_asset_id']
+                asset_to_edit = df[df['doc_id'] == asset_id_to_edit].iloc[0]
                 st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱', asset_to_edit['代號'])}")
                 with st.form("edit_asset_form"):
                     new_quantity = st.number_input("持有數量", min_value=0.0, format="%.4f", value=asset_to_edit['數量'])
                     new_cost_basis = st.number_input("平均成本", min_value=0.0, format="%.4f", value=asset_to_edit['成本價'])
                     new_name = st.text_input("自訂名稱(可選)", value=asset_to_edit.get('名稱', ''))
-                    if st.form_submit_button("儲存變更"):
+                    submitted_edit = st.form_submit_button("儲存變更")
+                    if submitted_edit:
                         update_data = {"數量": float(new_quantity), "成本價": float(new_cost_basis), "名稱": new_name}
-                        db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update(update_data)
+                        db.collection('users').document(user_id).collection('assets').document(asset_id_to_edit).update(update_data)
                         st.success("資產已成功更新！")
                         del st.session_state['editing_asset_id']
                         st.cache_data.clear()
                         st.rerun()
 
+            # --- 分類頁籤 (Tabs) 顯示 ---
             st.subheader("我的投資組合")
             categories = df['分類'].unique().tolist()
             asset_tabs = st.tabs(categories)
@@ -281,20 +323,21 @@ if 'user_id' in st.session_state:
             for i, category in enumerate(categories):
                 with asset_tabs[i]:
                     category_df = df[df['分類'] == category]
-                    cat_value = category_df.apply(lambda r: r['市值'] / 32 if r['幣別'] == 'TWD' else r['市值'], axis=1).sum()
-                    cat_cost = category_df.apply(lambda r: r['成本'] / 32 if r['幣別'] == 'TWD' else r['成本'], axis=1).sum()
+                    # ... (分類小計與列表渲染) ...
+                    cat_value = category_df['市值'].sum()
+                    cat_cost = category_df['成本'].sum()
                     cat_pnl = cat_value - cat_cost
                     cat_pnl_ratio = (cat_pnl / cat_cost * 100) if cat_cost != 0 else 0
                     c1, c2 = st.columns(2)
-                    c1.metric(f"{category} 市值 (約 USD)", f"${cat_value:,.2f}")
-                    c2.metric(f"{category} 損益 (約 USD)", f"${cat_pnl:,.2f}", f"{cat_pnl_ratio:.2f}%")
+                    c1.metric(f"{category} 市值 (當地幣別加總)", f"{cat_value:,.2f}")
+                    c2.metric(f"{category} 損益", f"{cat_pnl:,.2f}", f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
                     
                     header_cols = st.columns([3, 2, 2, 2, 2, 3, 1, 1])
                     headers = ["資產", "持有數量", "平均成本", "現價", "市值", "損益 (損益比)", "", ""]
                     for col, header in zip(header_cols, headers): col.markdown(f"**{header}**")
                     
-                    for _, row in category_df.iterrows():
+                    for index, row in category_df.iterrows():
                         doc_id, pnl, pnl_ratio = row['doc_id'], row['損益'], row['損益比']
                         cols = st.columns([3, 2, 2, 2, 2, 3, 1, 1])
                         cols[0].markdown(f"**{row['代號']}**<br><small>{row.get('名稱') or row.get('類型', '')}</small>", unsafe_allow_html=True)
@@ -312,12 +355,12 @@ if 'user_id' in st.session_state:
                             st.cache_data.clear()
                             st.rerun()
 
+    # 其他頁面的 Placeholder
     elif page == "AI 新聞精選":
         st.header("📰 AI 新聞精選 (開發中)")
-        st.info("此功能將在後端部署後啟用。")
     elif page == "決策輔助指標":
         st.header("📈 決策輔助指標 (開發中)")
-        st.info("此功能將在後端部署後啟用。")
 
+# 用戶未登入時的提示
 else:
     st.info("👋 請從左側側邊欄登入或註冊，以開始使用您的 AI 投資儀表板。")
