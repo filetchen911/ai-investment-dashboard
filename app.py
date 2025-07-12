@@ -2,16 +2,11 @@
 
 
 # ========================================================
-#  版本：v1.5 - Base64 解碼版
+#  版本：v1.5.1 - 最終部署版
 # ========================================================
 
 # --- 核心導入 ---
 import streamlit as st
-
-# --- [新增的除錯代碼] 打印出 APP 看到的所有 Secrets ---
-st.write("--- Secrets Debug Info ---")
-st.write(st.secrets.to_dict())
-st.write("--- End Debug Info ---")
 import pandas as pd
 import datetime
 import os
@@ -20,20 +15,20 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import base64 # <--- [新增] 導入 base64
+import base64 # 導入 base64
 
-APP_VERSION = "v1.5.0"
+APP_VERSION = "v1.5.1"
 
-# --- [重大修改] 從 Streamlit Secrets 讀取並用 Base64 解碼 ---
+# --- [最終版] 從 Streamlit Secrets 讀取並用 Base64 解碼 ---
 try:
     firebase_config = st.secrets["firebase_config"]
-    
-    # 讀取 Base64 編碼後的金鑰字串
-    base64_encoded_key = st.secrets["firebase_service_account_b64"]
-    
+
+    # 使用極簡鍵名 fb_key
+    base64_encoded_key = st.secrets["fb_key"]
+
     # 將 Base64 字串解碼還原成原始的 JSON 字串
     decoded_key_str = base64.b64decode(base64_encoded_key).decode('utf-8')
-    
+
     # 將 JSON 字串轉換為 Python 字典
     service_account_info = json.loads(decoded_key_str)
 
@@ -41,7 +36,8 @@ except Exception as e:
     st.error("⚠️ Secrets 配置錯誤或解碼失敗。請檢查設定。")
     st.error(f"詳細錯誤: {e}")
     st.stop()
-    
+
+
 # --- Firebase Admin SDK 初始化 ---
 if not firebase_admin._apps:
     try:
@@ -52,7 +48,6 @@ if not firebase_admin._apps:
         st.stop()
 
 db = firestore.client()
-
 
 # --- [升級版] 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
