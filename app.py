@@ -7,6 +7,11 @@
 
 # --- 核心導入 ---
 import streamlit as st
+
+# --- [新增的除錯代碼] 打印出 APP 看到的所有 Secrets ---
+st.write("--- Secrets Debug Info ---")
+st.write(st.secrets.to_dict())
+st.write("--- End Debug Info ---")
 import pandas as pd
 import datetime
 import os
