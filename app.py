@@ -259,7 +259,9 @@ if 'user_id' in st.session_state:
                     category_df=df[df['分類']==category]
                     cat_value=category_df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
                     cat_cost=category_df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-                    cat_pnl,cat_pnl_ratio=cat_value-cat_cost,(cat_pnl/cat_cost*100) if cat_cost!=0 else 0
+                    #cat_pnl,cat_pnl_ratio=cat_value-cat_cost,(cat_pnl/cat_cost*100) if cat_cost!=0 else 0
+                    cat_pnl = cat_value - cat_cost
+                    cat_pnl_ratio = (cat_pnl / cat_cost * 100) if cat_cost != 0 else 0
                     c1,c2=st.columns(2);c1.metric(f"{category} 市值 (約 USD)",f"${cat_value:,.2f}");c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
                     h_cols=st.columns([3,2,2,2,2,3,1,1])
