@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.0.0 - 手機優先版
+#  版本：v2.0.1 - 手機排版優化版
 #  功能：
 #  - 重構「資產概覽」頁面為卡片式佈局，優化手機瀏覽體驗
 # ========================================================
@@ -18,7 +18,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.0.0"
+APP_VERSION = "v2.0.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -261,7 +261,6 @@ if 'user_id' in st.session_state:
                     if st.form_submit_button("儲存變更"):
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
-
             st.subheader("我的投資組合")
             categories=df['分類'].unique().tolist()
             asset_tabs=st.tabs(categories)
@@ -277,7 +276,7 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
                     
-                    # --- [重大修改] v2.0.0 卡片式佈局 ---
+                    # --- [重大修改] v2.0.1 卡片式佈局 ---
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
                         pnl = row['損益']
@@ -285,22 +284,29 @@ if 'user_id' in st.session_state:
                         
                         with st.container(border=True):
                             # 第一行：主要資訊和按鈕
-                            col1, col2, col3 = st.columns([5, 3, 2])
+                            col1, col2, col3, col4, col5 = st.columns([4, 4, 3, 1, 1])
                             
                             with col1:
                                 st.markdown(f"**{row['代號']}**")
                                 st.caption(row.get('名稱') or row.get('類型', ''))
                             
                             with col2:
-                                st.metric(label=f"市值 ({row['幣別']})", value=f"{row['市值']:,.2f}", delta=f"{pnl:,.2f}")
+                                st.markdown("市值")
+                                st.markdown(f"<h4>{row['市值']:,.2f} <small>{row['幣別']}</small></h4>", unsafe_allow_html=True)
 
                             with col3:
-                                st.markdown(f"**{pnl_ratio:.2f}%**")
-                                btn_cols = st.columns(2)
-                                if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
+                                # 將損益金額和百分比整合到一個 st.metric 中
+                                st.metric(label="總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+
+                            with col4:
+                                # 編輯按鈕
+                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
                                     st.session_state['editing_asset_id'] = doc_id
                                     st.rerun()
-                                if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
+
+                            with col5:
+                                # 刪除按鈕
+                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
                                     db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                     st.success(f"資產 {row['代號']} 已刪除！")
                                     st.cache_data.clear()
@@ -342,15 +348,11 @@ if 'user_id' in st.session_state:
         st.header("📈 關鍵經濟指標趨勢")
         economic_data_report = load_latest_economic_data()
         if economic_data_report:
-            # 確保 'date' 欄位存在且是 datetime 物件
             if 'date' in economic_data_report and isinstance(economic_data_report['date'], datetime.datetime):
                 last_update_time = economic_data_report.get('date').strftime('%Y-%m-%d %H:%M:%S')
             else:
                 last_update_time = "N/A"
-                
             st.caption(f"數據來源：{economic_data_report.get('source_name', '未知')} | 上次更新時間 (UTC): {last_update_time}")
-            
-            # 處理恐慌與貪婪指數
             fear_greed_data = economic_data_report.get('fear_greed_index')
             if fear_greed_data:
                 st.subheader(f"CNN {fear_greed_data.get('event')}")
@@ -361,11 +363,9 @@ if 'user_id' in st.session_state:
                 with col2:
                     st.write("情緒儀表盤")
                     st.progress(fear_greed_data.get('value', 0) / 100)
-            
             st.markdown("---")
             st.subheader("宏觀經濟數據趨勢")
             indicators = economic_data_report.get('data_series_items', [])
-            
             if not indicators:
                 st.write("暫無宏觀經濟數據。")
             else:
@@ -381,7 +381,6 @@ if 'user_id' in st.session_state:
                                 chart_df['date'] = pd.to_datetime(chart_df['date'])
                                 chart_df = chart_df.set_index('date')
                                 chart_df['value'] = pd.to_numeric(chart_df['value'])
-                                
                                 latest_point = values[-1]
                                 st.metric(label=f"最新數據 ({latest_point['date']})", value=f"{latest_point['value']}")
                                 st.line_chart(chart_df)
