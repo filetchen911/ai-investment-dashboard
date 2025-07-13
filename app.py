@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.0.1 - 手機排版優化版
+#  版本：v2.0.2 - 手機排版優化版
 #  功能：
 #  - 重構「資產概覽」頁面為卡片式佈局，優化手機瀏覽體驗
 # ========================================================
@@ -18,7 +18,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.0.1"
+APP_VERSION = "v2.0.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -276,48 +276,58 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
                     
-                    # --- [重大修改] v2.0.1 卡片式佈局 ---
+                    # ...
+                    # 我們不再需要固定的表頭
+
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
                         pnl = row['損益']
                         pnl_ratio = row['損益比']
                         
+                        # --- [v2.0.2] 手機排版最終優化 ---
                         with st.container(border=True):
-                            # 第一行：主要資訊和按鈕
-                            col1, col2, col3, col4, col5 = st.columns([4, 4, 3, 1, 1])
+                            # 第一行：資產名稱和最重要的損益指標
+                            col1, col2 = st.columns([5, 3])
                             
                             with col1:
                                 st.markdown(f"**{row['代號']}**")
                                 st.caption(row.get('名稱') or row.get('類型', ''))
                             
                             with col2:
-                                st.markdown("市值")
-                                st.markdown(f"<h4>{row['市值']:,.2f} <small>{row['幣別']}</small></h4>", unsafe_allow_html=True)
+                                st.metric(label="總損益", value=f"{pnl:,.2f} {row['幣別']}", delta=f"{pnl_ratio:.2f}%")
 
-                            with col3:
-                                # 將損益金額和百分比整合到一個 st.metric 中
-                                st.metric(label="總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-
-                            with col4:
-                                # 編輯按鈕
-                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
+                            st.markdown("---") # 加上一條分隔線，讓佈局更清晰
+                            
+                            # 第二行：詳細數據和操作按鈕
+                            col_a, col_b, col_c, col_d = st.columns([3, 3, 1, 1])
+                            
+                            with col_a:
+                                st.markdown(f"**市值**")
+                                st.markdown(f"### {row['市值']:,.2f}")
+                            
+                            with col_b:
+                                st.markdown(f"**持有數量**")
+                                st.markdown(f"### {row['數量']:.4f}")
+                                
+                            with col_c:
+                                # [修正] 編輯按鈕，移除 use_container_width
+                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
                                     st.session_state['editing_asset_id'] = doc_id
                                     st.rerun()
 
-                            with col5:
-                                # 刪除按鈕
-                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
+                            with col_d:
+                                # [修正] 刪除按鈕，移除 use_container_width
+                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
                                     db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                     st.success(f"資產 {row['代號']} 已刪除！")
                                     st.cache_data.clear()
                                     st.rerun()
 
-                            # 第二行：可展開的詳細資訊
-                            with st.expander("查看詳細資料"):
-                                detail_cols = st.columns(3)
-                                detail_cols[0].metric("持有數量", f"{row['數量']:.4f}")
-                                detail_cols[1].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
-                                detail_cols[2].metric(f"現價 ({row['幣別']})", f"{row['Price']:,.2f}")
+                            # 第三行：可展開的更詳細資訊
+                            with st.expander("查看成本與現價"):
+                                detail_cols = st.columns(2)
+                                detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
+                                detail_cols[1].metric(f"現價 ({row['幣別']})", f"{row['Price']:,.2f}")
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
