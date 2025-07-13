@@ -236,7 +236,9 @@ if 'user_id' in st.session_state:
             df['分類']=df.apply(classify_asset,axis=1)
             total_value_usd=df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
             total_cost_usd=df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-            total_pnl_usd,total_pnl_ratio=total_value_usd-total_cost_usd,(total_pnl_usd/total_cost_usd*100) if total_cost_usd!=0 else 0
+            #total_pnl_usd,total_pnl_ratio=total_value_usd-total_cost_usd,(total_pnl_usd/total_cost_usd*100) if total_cost_usd!=0 else 0
+            total_pnl_usd = total_value_usd - total_cost_usd
+            total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
             last_updated=quotes_df['Timestamp'].max().strftime('%Y-%m-%d %H:%M:%S') if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all() else "N/A"
             k1,k2,k3=st.columns(3)
             k1.metric("總資產價值 (約 USD)",f"${total_value_usd:,.2f}");k2.metric("總損益 (約 USD)",f"${total_pnl_usd:,.2f}",f"{total_pnl_ratio:.2f}%");k3.metric("報價更新時間 (UTC)",last_updated)
