@@ -2,9 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v1.8.0 - AI 洞見呈現版
-#  功能：
-#  - 在「AI 新聞精選」頁面，讀取並展示後端生成的分析結果
+#  版本：v1.8.0 - AI 洞見呈現 + 健壯性修正版
 # ========================================================
 
 # --- 核心導入 ---
@@ -20,7 +18,7 @@ from firebase_admin import credentials, auth, firestore
 
 APP_VERSION = "v1.8.0"
 
-# --- [最終版] 從 Streamlit Secrets 讀取並重組金鑰 ---
+# --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
     firebase_config = st.secrets["firebase_config"]
     service_account_info = {
@@ -188,7 +186,6 @@ if 'user_id' in st.session_state:
     page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True)
 
     if page == "資產概覽":
-        # ... (資產概覽頁面的完整程式碼，與您提供的 v1.7.0 版本相同) ...
         st.header("📊 資產概覽")
         col1_action, _ = st.columns([1, 3])
         if col1_action.button("🔄 立即更新所有報價"):
@@ -213,8 +210,22 @@ if 'user_id' in st.session_state:
         if assets_df.empty:st.info("您目前沒有資產。")
         else:
             df=pd.merge(assets_df,quotes_df,left_on='代號',right_on='Symbol',how='left')
-            for col in ['Price','數量','成本價']:df[col]=pd.to_numeric(df[col],errors='coerce').fillna(0)
-            df['市值'],df['成本'],df['損益']=df['Price']*df['數量'],df['成本價']*df['數量'],df['市值']-df['成本']
+            for col in ['數量','成本價']:df[col]=pd.to_numeric(df[col],errors='coerce').fillna(0)
+            
+            # --- [健壯性修正] ---
+            if 'Price' in df.columns and not df['Price'].isnull().all():
+                df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(0)
+                df['市值'] = df['Price'] * df['數量']
+            else:
+                df['Price'] = df['成本價']
+                df['市值'] = df['成本價'] * df['數量']
+                if 'warning_shown' not in st.session_state:
+                    st.warning("報價數據暫時無法獲取，目前「現價」與「市值」以您的成本價計算。")
+                    st.session_state['warning_shown'] = True
+            # --- 修正結束 ---
+            
+            df['成本']=df['成本價']*df['數量']
+            df['損益']=df['市值']-df['成本']
             df['損益比']=df.apply(lambda r:(r['損益']/r['成本'])*100 if r['成本']!=0 else 0,axis=1)
             def classify_asset(r):
                 t,s=r.get('類型','').lower(),r.get('代號','').upper()
@@ -261,30 +272,17 @@ if 'user_id' in st.session_state:
                         if cols[7].button("🗑️",key=f"delete_{doc_id}",help="刪除"):db.collection('users').document(user_id).collection('assets').document(doc_id).delete();st.success(f"資產 {row['代號']} 已刪除！");st.cache_data.clear();st.rerun()
 
     elif page == "AI 新聞精選":
-        # --- [重大修改] AI 新聞精選頁面的新邏輯 ---
         st.header("💡 AI 每日市場洞察")
-        
-        # 讀取最新的 AI 分析結果
         insights_data = load_latest_insights(user_id)
-        
         if insights_data:
-            # 顯示上次更新時間
             st.caption(f"上次分析時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} (您的本地時間)")
-            
-            # --- 1. 顯示市場總結 ---
             st.subheader("今日市場總結")
             st.info(insights_data.get('market_summary', '暫無總結。'))
-            
-            # --- 2. 顯示對投資組合的影響 ---
             st.subheader("對您投資組合的潛在影響")
             st.warning(insights_data.get('portfolio_impact', '暫無影響分析。'))
-            
             st.markdown("---")
-            
-            # --- 3. 顯示核心洞見列表 ---
             st.subheader("核心洞見摘要")
             key_takeaways = insights_data.get('key_takeaways', [])
-            
             if not key_takeaways:
                 st.write("今日無核心洞見。")
             else:
@@ -293,18 +291,14 @@ if 'user_id' in st.session_state:
                     with st.container(border=True):
                         st.markdown(f"**{icon} {item.get('type', '洞見')}** | 來源：{item.get('source', '未知')}")
                         st.write(item.get('content', ''))
-                        # 如果有原始新聞連結，就提供一個可點擊的按鈕
                         if item.get('type') == '新聞洞見' and item.get('link'):
                             st.link_button("查看原文", item['link'])
-                            
         else:
-            st.info("今日的 AI 分析尚未生成，或正在處理中。請稍後再回來查看，或檢查後端排程是否已成功執行。")
-
+            st.info("今日的 AI 分析尚未生成，或正在處理中。請稍後再回來查看。")
 
     elif page == "決策輔助指標":
         st.header("📈 決策輔助指標 (開發中)")
         st.info("此功能將在未來版本中，顯示由後端抓取的 CNN 恐慌貪婪指數等數據。")
 
-# 用戶未登入時的提示
 else:
     st.info("👋 請從左側側邊欄登入或註冊，以開始使用您的 AI 投資儀表板。")
