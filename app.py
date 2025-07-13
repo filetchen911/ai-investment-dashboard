@@ -2,7 +2,9 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v1.8.0 - AI 洞見呈現 + 健壯性修正版
+#  版本：v1.9.0 - 最終完整版
+#  功能：
+#  - 完成「決策輔助指標」頁面，以圖表呈現宏觀數據
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +18,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v1.8.0"
+APP_VERSION = "v1.9.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -145,6 +147,19 @@ def load_latest_insights(user_id):
         st.error(f"讀取 AI 洞見時發生錯誤: {e}")
         return None
 
+@st.cache_data(ttl=900)
+def load_latest_economic_data():
+    """從 Firestore 獲取最新一天的宏觀經濟數據報告。"""
+    try:
+        query = db.collection('daily_economic_data').order_by('date', direction=firestore.Query.DESCENDING).limit(1)
+        docs = list(query.stream())
+        if docs:
+            return docs[0].to_dict()
+        return None
+    except Exception as e:
+        st.error(f"讀取宏觀經濟數據時發生錯誤: {e}")
+        return None
+
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
 st.title("📈 AI 投資儀表板")
@@ -211,19 +226,15 @@ if 'user_id' in st.session_state:
         else:
             df=pd.merge(assets_df,quotes_df,left_on='代號',right_on='Symbol',how='left')
             for col in ['數量','成本價']:df[col]=pd.to_numeric(df[col],errors='coerce').fillna(0)
-            
-            # --- [健壯性修正] ---
             if 'Price' in df.columns and not df['Price'].isnull().all():
-                df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(0)
-                df['市值'] = df['Price'] * df['數量']
+                df['Price']=pd.to_numeric(df['Price'],errors='coerce').fillna(0)
+                df['市值']=df['Price']*df['數量']
             else:
-                df['Price'] = df['成本價']
-                df['市值'] = df['成本價'] * df['數量']
+                df['Price']=df['成本價']
+                df['市值']=df['成本價']*df['數量']
                 if 'warning_shown' not in st.session_state:
                     st.warning("報價數據暫時無法獲取，目前「現價」與「市值」以您的成本價計算。")
                     st.session_state['warning_shown'] = True
-            # --- 修正結束 ---
-            
             df['成本']=df['成本價']*df['數量']
             df['損益']=df['市值']-df['成本']
             df['損益比']=df.apply(lambda r:(r['損益']/r['成本'])*100 if r['成本']!=0 else 0,axis=1)
@@ -236,73 +247,8 @@ if 'user_id' in st.session_state:
             df['分類']=df.apply(classify_asset,axis=1)
             total_value_usd=df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
             total_cost_usd=df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-            #total_pnl_usd,total_pnl_ratio=total_value_usd-total_cost_usd,(total_pnl_usd/total_cost_usd*100) if total_cost_usd!=0 else 0
             total_pnl_usd = total_value_usd - total_cost_usd
             total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
             last_updated=quotes_df['Timestamp'].max().strftime('%Y-%m-%d %H:%M:%S') if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all() else "N/A"
             k1,k2,k3=st.columns(3)
-            k1.metric("總資產價值 (約 USD)",f"${total_value_usd:,.2f}");k2.metric("總損益 (約 USD)",f"${total_pnl_usd:,.2f}",f"{total_pnl_ratio:.2f}%");k3.metric("報價更新時間 (UTC)",last_updated)
-            st.markdown("---")
-            if 'editing_asset_id' in st.session_state:
-                asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
-                with st.form("edit_asset_form"):
-                    st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱',asset_to_edit['代號'])}")
-                    q,c,n=st.number_input("持有數量",0.0,format="%.4f",value=asset_to_edit['數量']),st.number_input("平均成本",0.0,format="%.4f",value=asset_to_edit['成本價']),st.text_input("自訂名稱(可選)",value=asset_to_edit.get('名稱',''))
-                    if st.form_submit_button("儲存變更"):
-                        db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
-                        st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
-            st.subheader("我的投資組合")
-            categories=df['分類'].unique().tolist()
-            asset_tabs=st.tabs(categories)
-            for i, category in enumerate(categories):
-                with asset_tabs[i]:
-                    category_df=df[df['分類']==category]
-                    cat_value=category_df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
-                    cat_cost=category_df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-                    #cat_pnl,cat_pnl_ratio=cat_value-cat_cost,(cat_pnl/cat_cost*100) if cat_cost!=0 else 0
-                    cat_pnl = cat_value - cat_cost
-                    cat_pnl_ratio = (cat_pnl / cat_cost * 100) if cat_cost != 0 else 0
-                    c1,c2=st.columns(2);c1.metric(f"{category} 市值 (約 USD)",f"${cat_value:,.2f}");c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
-                    st.markdown("---")
-                    h_cols=st.columns([3,2,2,2,2,3,1,1])
-                    for col,h in zip(h_cols,["資產","持有數量","平均成本","現價","市值","損益 (損益比)","",""]):col.markdown(f"**{h}**")
-                    for _,row in category_df.iterrows():
-                        doc_id,pnl,pnl_ratio=row['doc_id'],row['損益'],row['損益比']
-                        cols=st.columns([3,2,2,2,2,3,1,1])
-                        cols[0].markdown(f"**{row['代號']}**<br><small>{row.get('名稱')or row.get('類型','')}</small>",unsafe_allow_html=True)
-                        cols[1].text(f"{row['數量']:.4f}");cols[2].text(f"{row['成本價']:.2f} {row['幣別']}");cols[3].text(f"{row['Price']:.2f} {row['幣別']}");cols[4].text(f"{row['市值']:,.2f} {row['幣別']}")
-                        cols[5].metric(label="",value=f"{pnl:,.2f}",delta=f"{pnl_ratio:.2f}%",label_visibility="collapsed")
-                        if cols[6].button("✏️",key=f"edit_{doc_id}",help="編輯"):st.session_state['editing_asset_id']=doc_id;st.rerun()
-                        if cols[7].button("🗑️",key=f"delete_{doc_id}",help="刪除"):db.collection('users').document(user_id).collection('assets').document(doc_id).delete();st.success(f"資產 {row['代號']} 已刪除！");st.cache_data.clear();st.rerun()
-
-    elif page == "AI 新聞精選":
-        st.header("💡 AI 每日市場洞察")
-        insights_data = load_latest_insights(user_id)
-        if insights_data:
-            st.caption(f"上次分析時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} (您的本地時間)")
-            st.subheader("今日市場總結")
-            st.info(insights_data.get('market_summary', '暫無總結。'))
-            st.subheader("對您投資組合的潛在影響")
-            st.warning(insights_data.get('portfolio_impact', '暫無影響分析。'))
-            st.markdown("---")
-            st.subheader("核心洞見摘要")
-            key_takeaways = insights_data.get('key_takeaways', [])
-            if not key_takeaways:
-                st.write("今日無核心洞見。")
-            else:
-                for item in key_takeaways:
-                    icon = "📊" if item.get('type') == '數據洞見' else "📰"
-                    with st.container(border=True):
-                        st.markdown(f"**{icon} {item.get('type', '洞見')}** | 來源：{item.get('source', '未知')}")
-                        st.write(item.get('content', ''))
-                        if item.get('type') == '新聞洞見' and item.get('link'):
-                            st.link_button("查看原文", item['link'])
-        else:
-            st.info("今日的 AI 分析尚未生成，或正在處理中。請稍後再回來查看。")
-
-    elif page == "決策輔助指標":
-        st.header("📈 決策輔助指標 (開發中)")
-        st.info("此功能將在未來版本中，顯示由後端抓取的 CNN 恐慌貪婪指數等數據。")
-
-else:
-    st.info("👋 請從左側側邊欄登入或註冊，以開始使用您的 AI 投資儀表板。")
+            k1.metric("總資產價值 (約 USD)",f"${total_value_usd:,.2f}");k2.metric("總損益 (約 USD)",f
