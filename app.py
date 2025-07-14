@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.2.0 - 最終手機版 (依據設計圖)
+#  版本：v2.2.1 - 最終手機美化版 (CSS 注入)
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,53 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.2.0"
+APP_VERSION = "v2.2.1"
+
+# --- [新] 自訂 CSS 樣式 ---
+# 這是實現精確排版的關鍵
+st.markdown("""
+<style>
+    /* 卡片頂部的雙欄佈局 */
+    .card-top-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start; /* 頂部對齊 */
+        width: 100%;
+    }
+    .card-asset-info {
+        flex-grow: 1; /* 左側佔據多餘空間 */
+    }
+    .card-asset-value {
+        flex-shrink: 0; /* 右側不壓縮 */
+        text-align: right; /* 文字靠右 */
+        width: 45%; /* 給予一個合適的寬度 */
+    }
+    /* 為h5, p, small 等標籤設定更緊湊的邊距 */
+    .card-asset-info h5, .card-asset-info p, .card-asset-info small,
+    .card-asset-value h5, .card-asset-value p {
+        margin: 0;
+        padding: 0;
+        line-height: 1.3;
+    }
+    .card-asset-value p {
+        font-size: 0.8rem;
+        color: #888;
+    }
+    /* 按鈕容器 */
+    .card-button-container {
+        display: flex;
+        justify-content: flex-end; /* 按鈕靠右 */
+        gap: 8px; /* 按鈕間距 */
+        margin-top: 8px;
+    }
+    /* 讓 Streamlit 的按鈕在 Flex 容器中正常顯示 */
+    .stButton>button {
+        width: auto; /* 按鈕寬度自適應內容，而不是佔滿整行 */
+        padding: 0.25rem 0.5rem; /* 讓按鈕小一點 */
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -275,51 +321,54 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [新增] 靜態表頭 ---
-                    header_cols = st.columns([1, 1])
-                    header_cols[0].markdown("**持倉**")
-                    header_cols[1].markdown("<p style='text-align: right;'><b>價格與市值</b></p>", unsafe_allow_html=True)
-                    st.markdown('<hr style="margin:0.2rem 0">', unsafe_allow_html=True)
-                                    
-                    # 遍歷資產，渲染最終版卡片
-                    for _, row in category_df.iterrows():
-                        doc_id = row['doc_id']
-                        
-                        with st.container(border=True):
-                            # 第一行：主要資訊
-                            col1, col2 = st.columns([1, 1])
-                            with col1:
-                                st.markdown(f"<h5>{row['代號']}</h5>", unsafe_allow_html=True)
-                                st.caption(row.get('名稱') or row.get('類型', ''))
-                                st.markdown(f"{row['數量']:.4f} 股")
-                            with col2:
-                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem; font-size: 0.9rem;'>現價</p>", unsafe_allow_html=True)
-                                st.markdown(f"<h5 style='text-align: right;'>{row['Price']:,.2f}</h5>", unsafe_allow_html=True)
-                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem; font-size: 0.9rem;'>市值</p>", unsafe_allow_html=True)
-                                st.markdown(f"<h5 style='text-align: right;'>{row['市值']:,.2f}</h5>", unsafe_allow_html=True)
+                # --- [v2.2.0] 靜態表頭 ---
+                header_cols = st.columns([1, 1])
+                header_cols[0].markdown("**持倉**")
+                header_cols[1].markdown("<p style='text-align: right;'><b>價格與市值</b></p>", unsafe_allow_html=True)
+                st.markdown('<hr style="margin:0.2rem 0; opacity: 0.3;">', unsafe_allow_html=True)
 
-                            # 第二行：可展開的詳細資訊
-                            with st.expander("查看成本與總損益"):
-                                pnl = row['損益']
-                                pnl_ratio = row['損益比']
-                                detail_cols = st.columns(2)
-                                detail_cols[0].metric(label=f"平均成本 ({row['幣別']})", value=f"{row['成本價']:,.2f}")
-                                detail_cols[1].metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-                            
-                            # 第三行：操作按鈕
-                            st.markdown('<hr style="margin:0.1rem 0; border-style: dotted; opacity: 0.3;">', unsafe_allow_html=True)
-                            btn_cols = st.columns([5, 1, 1]) # 使用空白欄位將按鈕推到右側
-                            
-                            # 移除 use_container_width=True 讓按鈕恢復原始大小
-                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
+                # --- [重大修改] v2.2.0 最終版卡片式佈局 (HTML/CSS) ---
+                for _, row in category_df.iterrows():
+                    doc_id = row['doc_id']
+                    
+                    with st.container(border=True):
+                        # 使用自訂的 CSS class 來控制佈局
+                        st.markdown(f"""
+                        <div class="asset-card-row">
+                            <div class="asset-info">
+                                <h5>{row['代號']}</h5>
+                                <small>{row.get('名稱') or row.get('類型', '')}</small>
+                                <p>{row['數量']:.4f} 股</p>
+                            </div>
+                            <div class="asset-value">
+                                <p>現價</p>
+                                <h5>{row['Price']:,.2f}</h5>
+                                <p style="margin-top: 0.5rem;">市值</p>
+                                <h5>{row['市值']:,.2f}</h5>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        with st.expander("查看成本與總損益"):
+                            pnl = row['損益']
+                            pnl_ratio = row['損益比']
+                            detail_cols = st.columns(2)
+                            detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
+                            detail_cols[1].metric(f"總損益 ({row['幣別']})", f"{pnl:,.2f}", f"{pnl_ratio:.2f}%")
+                        
+                        # --- 按鈕佈局 ---
+                        # 透過 st.columns 的空白欄位將按鈕推向右側
+                        btn_cols = st.columns([10, 1, 1])
+                        with btn_cols[1]:
+                            if st.button("✏️", key=f"edit_{doc_id}", help="編輯"):
                                 st.session_state['editing_asset_id'] = doc_id
                                 st.rerun()
-                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
+                        with btn_cols[2]:
+                            if st.button("🗑️", key=f"delete_{doc_id}", help="刪除"):
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                 st.success(f"資產 {row['代號']} 已刪除！")
                                 st.cache_data.clear()
                                 st.rerun()
-
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
