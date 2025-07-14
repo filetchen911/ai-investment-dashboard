@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.5.1 - 桌面最終版
+#  版本：v2.5.2 - 最終版面定案
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.5.1"
+APP_VERSION = "v2.5.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -244,25 +244,13 @@ if 'user_id' in st.session_state:
             total_cost_usd=df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
             total_pnl_usd = total_value_usd - total_cost_usd
             total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
-
-            # --- [v2.5.1] 時間格式與時區修正 ---
-            if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all():
-                last_updated_utc = quotes_df['Timestamp'].max()
-                # 定義台北時區 (UTC+8)
-                taipei_tz = datetime.timezone(datetime.timedelta(hours=8))
-                # 將 UTC 時間轉換為台北時間
-                last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
-                # 格式化為您要求的 YY-MM-DD HH:MM 格式
-                formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
-            else:
-                formatted_time = "N/A"
-
-            k1,k2,k3=st.columns(3)
-            # ... (k1, k2 的程式碼不變)
-            # 將標籤和值更新
-            k3.metric("報價更新時間 (台北)", formatted_time)
-
+            
+            # [v2.5.2 修正] 將總覽指標減少為兩個
+            k1,k2=st.columns(2)
+            k1.metric("總資產價值 (約 USD)", f"${total_value_usd:,.2f}")
+            k2.metric("總損益 (約 USD)", f"${total_pnl_usd:,.2f}", f"{total_pnl_ratio:.2f}%")
             st.markdown("---")
+            
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
                 with st.form("edit_asset_form"):
@@ -272,7 +260,18 @@ if 'user_id' in st.session_state:
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
             
-            st.subheader("我的投資組合")
+            # [v2.5.2 修正] 將更新時間移動到副標題旁
+            col_title, col_time = st.columns([3, 1])
+            with col_title:
+                st.subheader("我的投資組合")
+            with col_time:
+                if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all():
+                    last_updated_utc = quotes_df['Timestamp'].max()
+                    taipei_tz = datetime.timezone(datetime.timedelta(hours=8))
+                    last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
+                    formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
+                    st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
+
             categories=df['分類'].unique().tolist()
             asset_tabs=st.tabs(categories)
             
@@ -288,61 +287,42 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [v2.5.0] 桌面版多欄位表頭 ---
+                    # [v2.5.0] 桌面版多欄位表頭
                     header_cols = st.columns([3, 2, 2, 2, 2, 2])
-                    header_cols[0].markdown("**持倉**")
-                    header_cols[1].markdown("**數量**")
-                    header_cols[2].markdown("**現價**")
-                    header_cols[3].markdown("**成本**")
-                    header_cols[4].markdown("**總市值**")
-                    header_cols[5].markdown("<p style='text-align: right;'><b>操作</b></p>", unsafe_allow_html=True)
+                    headers = ["持倉", "數量", "現價", "成本", "總市值", ""]
+                    for col, header in zip(header_cols, headers):
+                        col.markdown(f"**{header}**")
+                    
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
-                    # --- [v2.5.0] 桌面版資產列表 ---
+                    # [v2.5.0] 桌面版資產列表
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
-                        
-                        # 使用 st.columns 實現水平多欄位佈局
                         cols = st.columns([3, 2, 2, 2, 2, 2])
-
-                        # 使用 st.markdown 和 h4 標籤來放大字體
                         with cols[0]:
-                            st.markdown(f"<h4>{row['代號']}</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row['代號']}</h5>", unsafe_allow_html=True)
                             st.caption(row.get('名稱') or row.get('類型', ''))
-                        
                         with cols[1]:
-                            st.markdown(f"<h4>{row['數量']:.4f}</h4>", unsafe_allow_html=True)
-                        
+                            st.markdown(f"<h5>{row['數量']:.4f}</h5>", unsafe_allow_html=True)
                         with cols[2]:
-                            st.markdown(f"<h4>{row['Price']:,.2f}</h4>", unsafe_allow_html=True)
-
+                            st.markdown(f"<h5>{row['Price']:,.2f}</h5>", unsafe_allow_html=True)
                         with cols[3]:
-                            st.markdown(f"<h4>{row['成本價']:,.2f}</h4>", unsafe_allow_html=True)
-                        
+                            st.markdown(f"<h5>{row['成本價']:,.2f}</h5>", unsafe_allow_html=True)
                         with cols[4]:
-                            st.markdown(f"<h4>{row['市值']:,.2f}</h4>", unsafe_allow_html=True)
-
-                        # 將編輯和刪除按鈕放在最後一欄
+                            st.markdown(f"<h5>{row['市值']:,.2f}</h5>", unsafe_allow_html=True)
                         with cols[5]:
-                            # 使用 st.columns 讓按鈕在自己的欄位中並排
                             btn_cols = st.columns([1,1])
-                            with btn_cols[0]:
-                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
-                                    st.session_state['editing_asset_id'] = doc_id
-                                    st.rerun()
-                            with btn_cols[1]:
-                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
-                                    db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                    st.success(f"資產 {row['代號']} 已刪除！")
-                                    st.cache_data.clear()
-                                    st.rerun()
+                            if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
+                                st.session_state['editing_asset_id'] = doc_id
+                                st.rerun()
+                            if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
+                                db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
+                                st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
                         
-                        # 將損益相關資訊放入可展開的區域
                         with st.expander("查看損益"):
                             pnl = row['損益']
                             pnl_ratio = row['損益比']
                             st.metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-                        
                         st.divider()
 
     elif page == "AI 新聞精選":
