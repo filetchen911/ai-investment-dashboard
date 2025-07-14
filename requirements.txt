@@ -3,3 +3,4 @@ pandas
 firebase-admin
 yfinance
 requests
+plotly  # <--- 新增
