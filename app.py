@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.1.1 - 最終手機版 (依據設計圖)
+#  版本：v2.2.0 - 最終手機版 (依據設計圖)
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.1.1"
+APP_VERSION = "v2.2.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -281,44 +281,45 @@ if 'user_id' in st.session_state:
                     header_cols[1].markdown("<p style='text-align: right;'><b>價格與市值</b></p>", unsafe_allow_html=True)
                     st.markdown('<hr style="margin:0.2rem 0">', unsafe_allow_html=True)
                                     
-                    # --- [重大修改] 最終版卡片式佈局 ---
+                    # 遍歷資產，渲染最終版卡片
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
-                        pnl = row['損益']
-                        pnl_ratio = row['損益比']
                         
                         with st.container(border=True):
                             # 第一行：主要資訊
                             col1, col2 = st.columns([1, 1])
                             with col1:
-                                st.markdown(f"<h4>{row['代號']}</h4>", unsafe_allow_html=True)
+                                st.markdown(f"<h5>{row['代號']}</h5>", unsafe_allow_html=True)
                                 st.caption(row.get('名稱') or row.get('類型', ''))
                                 st.markdown(f"{row['數量']:.4f} 股")
                             with col2:
-                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem;'>現價</p>", unsafe_allow_html=True)
-                                st.markdown(f"<h4 style='text-align: right;'>{row['Price']:,.2f}</h4>", unsafe_allow_html=True)
-                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem;'>市值</p>", unsafe_allow_html=True)
-                                st.markdown(f"<h4 style='text-align: right;'>{row['市值']:,.2f}</h4>", unsafe_allow_html=True)
+                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem; font-size: 0.9rem;'>現價</p>", unsafe_allow_html=True)
+                                st.markdown(f"<h5 style='text-align: right;'>{row['Price']:,.2f}</h5>", unsafe_allow_html=True)
+                                st.markdown(f"<p style='text-align: right; margin-bottom: -0.5rem; font-size: 0.9rem;'>市值</p>", unsafe_allow_html=True)
+                                st.markdown(f"<h5 style='text-align: right;'>{row['市值']:,.2f}</h5>", unsafe_allow_html=True)
 
                             # 第二行：可展開的詳細資訊
                             with st.expander("查看成本與總損益"):
+                                pnl = row['損益']
+                                pnl_ratio = row['損益比']
                                 detail_cols = st.columns(2)
-                                detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
-                                detail_cols[1].metric(f"總損益 ({row['幣別']})", f"{pnl:,.2f}", f"{pnl_ratio:.2f}%")
+                                detail_cols[0].metric(label=f"平均成本 ({row['幣別']})", value=f"{row['成本價']:,.2f}")
+                                detail_cols[1].metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
                             
                             # 第三行：操作按鈕
-                            st.markdown('<hr style="margin:0.1rem 0; border-style: a;">', unsafe_allow_html=True) # 細分隔線
-                            btn_cols = st.columns([6, 1, 1]) # 用一個大的空白欄位把按鈕推到最右邊
-                            with btn_cols[1]:
-                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
-                                    st.session_state['editing_asset_id'] = doc_id
-                                    st.rerun()
-                            with btn_cols[2]:
-                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
-                                    db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                    st.success(f"資產 {row['代號']} 已刪除！")
-                                    st.cache_data.clear()
-                                    st.rerun()
+                            st.markdown('<hr style="margin:0.1rem 0; border-style: dotted; opacity: 0.3;">', unsafe_allow_html=True)
+                            btn_cols = st.columns([5, 1, 1]) # 使用空白欄位將按鈕推到右側
+                            
+                            # 移除 use_container_width=True 讓按鈕恢復原始大小
+                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
+                                st.session_state['editing_asset_id'] = doc_id
+                                st.rerun()
+                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
+                                db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
+                                st.success(f"資產 {row['代號']} 已刪除！")
+                                st.cache_data.clear()
+                                st.rerun()
+
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
