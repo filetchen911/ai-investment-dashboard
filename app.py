@@ -2,10 +2,9 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.7.0 - 最終功能版
+#  版本：v2.7.1 - 資產佔比版
 #  功能：
-#  - 新增資產配置圓餅圖 (台幣計價)
-#  - 重構數據處理邏輯，徹底修復 KeyError
+#  - 在資產摺疊區新增「資產佔比」指標
 # ========================================================
 
 # --- 核心導入 ---
@@ -21,7 +20,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.7.0"
+APP_VERSION = "v2.7.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -277,7 +276,13 @@ if 'user_id' in st.session_state:
             total_cost_twd = df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
             total_pnl_twd = total_value_twd - total_cost_twd
             total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
-            
+
+            # --- [新增 v2.7.1] 計算資產佔比 ---
+            if total_value_twd > 0:
+                df['佔比'] = (df['市值_TWD'] / total_value_twd) * 100
+            else:
+                df['佔比'] = 0
+                            
             k1, k2, k3 = st.columns(3)
             k1.metric("總資產價值 (約 TWD)", f"${total_value_twd:,.0f}")
             k2.metric("總損益 (約 TWD)", f"${total_pnl_twd:,.0f}", f"{total_pnl_ratio:.2f}%")
@@ -362,10 +367,18 @@ if 'user_id' in st.session_state:
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                 st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
                         
-                        with st.expander("查看損益"):
+                        # --- [v2.7.1] 擴充摺疊區，新增資產佔比 ---
+                        with st.expander("查看損益與佔比"):
                             pnl = row.get('損益', 0)
                             pnl_ratio = row.get('損益比', 0)
-                            st.metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            asset_weight = row.get('佔比', 0)
+                            
+                            expander_cols = st.columns(2)
+                            with expander_cols[0]:
+                                st.metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            with expander_cols[1]:
+                                st.metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
+
                         st.divider()
 
     elif page == "AI 新聞精選":
