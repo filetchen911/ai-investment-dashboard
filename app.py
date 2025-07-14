@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.5.0 - 桌面最終版
+#  版本：v2.5.1 - 桌面最終版
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.5.0"
+APP_VERSION = "v2.5.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -244,11 +244,24 @@ if 'user_id' in st.session_state:
             total_cost_usd=df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
             total_pnl_usd = total_value_usd - total_cost_usd
             total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
-            last_updated=quotes_df['Timestamp'].max().strftime('%Y-%m-%d %H:%M:%S') if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all() else "N/A"
+
+            # --- [v2.5.1] 時間格式與時區修正 ---
+            if 'Timestamp' in quotes_df.columns and not quotes_df['Timestamp'].isnull().all():
+                last_updated_utc = quotes_df['Timestamp'].max()
+                # 定義台北時區 (UTC+8)
+                taipei_tz = datetime.timezone(datetime.timedelta(hours=8))
+                # 將 UTC 時間轉換為台北時間
+                last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
+                # 格式化為您要求的 YY-MM-DD HH:MM 格式
+                formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
+            else:
+                formatted_time = "N/A"
+
             k1,k2,k3=st.columns(3)
-            k1.metric("總資產價值 (約 USD)", f"${total_value_usd:,.2f}")
-            k2.metric("總損益 (約 USD)", f"${total_pnl_usd:,.2f}", f"{total_pnl_ratio:.2f}%")
-            k3.metric("報價更新時間 (UTC)", last_updated)
+            # ... (k1, k2 的程式碼不變)
+            # 將標籤和值更新
+            k3.metric("報價更新時間 (台北)", formatted_time)
+
             st.markdown("---")
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
@@ -331,7 +344,7 @@ if 'user_id' in st.session_state:
                             st.metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
                         
                         st.divider()
-                                
+
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
         insights_data = load_latest_insights(user_id)
