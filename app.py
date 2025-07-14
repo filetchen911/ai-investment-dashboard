@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.5.2 - 最終版面定案
+#  版本：v2.6.0 - 資產配置可視化版
 # ========================================================
 
 # --- 核心導入 ---
@@ -15,8 +15,9 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+import plotly.express as px # <--- 新增 Plotly 導入
 
-APP_VERSION = "v2.5.2"
+APP_VERSION = "v2.6.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -245,11 +246,30 @@ if 'user_id' in st.session_state:
             total_pnl_usd = total_value_usd - total_cost_usd
             total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
             
-            # [v2.5.2 修正] 將總覽指標減少為兩個
             k1,k2=st.columns(2)
             k1.metric("總資產價值 (約 USD)", f"${total_value_usd:,.2f}")
             k2.metric("總損益 (約 USD)", f"${total_pnl_usd:,.2f}", f"{total_pnl_ratio:.2f}%")
             st.markdown("---")
+            
+            # --- [新功能 v2.6.0] 資產配置圓餅圖 ---
+            if total_value_usd > 0:
+                st.subheader("資產配置比例")
+                df['市值_USD'] = df.apply(lambda r: r['市值'] / 32 if r['幣別'] == 'TWD' else r['市值'], axis=1)
+                allocation_by_class = df.groupby('分類')['市值_USD'].sum().reset_index()
+                allocation_by_currency = df.groupby('幣別')['市值_USD'].sum().reset_index()
+
+                chart_col1, chart_col2 = st.columns(2)
+                with chart_col1:
+                    fig_class = px.pie(allocation_by_class, names='分類', values='市值_USD', title='依資產類別', hole=.3)
+                    fig_class.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05] * len(allocation_by_class))
+                    st.plotly_chart(fig_class, use_container_width=True)
+                with chart_col2:
+                    fig_currency = px.pie(allocation_by_currency, names='幣別', values='市值_USD', title='依計價幣別', hole=.3)
+                    fig_currency.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05] * len(allocation_by_currency))
+                    st.plotly_chart(fig_currency, use_container_width=True)
+            
+            st.markdown("---")
+            # --- 新功能結束 ---
             
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
@@ -260,7 +280,6 @@ if 'user_id' in st.session_state:
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
             
-            # [v2.5.2 修正] 將更新時間移動到副標題旁
             col_title, col_time = st.columns([3, 1])
             with col_title:
                 st.subheader("我的投資組合")
@@ -287,7 +306,6 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # [v2.5.0] 桌面版多欄位表頭
                     header_cols = st.columns([3, 2, 2, 2, 2, 2])
                     headers = ["持倉", "數量", "現價", "成本", "總市值", ""]
                     for col, header in zip(header_cols, headers):
@@ -295,7 +313,6 @@ if 'user_id' in st.session_state:
                     
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
-                    # [v2.5.0] 桌面版資產列表
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
                         cols = st.columns([3, 2, 2, 2, 2, 2])
