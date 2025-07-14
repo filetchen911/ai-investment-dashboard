@@ -2,7 +2,10 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.6.2 - 最終穩定版
+#  版本：v2.7.0 - 最終功能版
+#  功能：
+#  - 新增資產配置圓餅圖 (台幣計價)
+#  - 重構數據處理邏輯，徹底修復 KeyError
 # ========================================================
 
 # --- 核心導入 ---
@@ -15,9 +18,10 @@ import json
 import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-import plotly.express as px # <--- 新增 Plotly 導入
+import plotly.express as px
+import numpy as np
 
-APP_VERSION = "v2.6.2"
+APP_VERSION = "v2.7.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -156,10 +160,8 @@ def load_latest_economic_data():
         st.error(f"讀取宏觀經濟數據時發生錯誤: {e}")
         return None
 
-# --- [新增] 匯率獲取函數 ---
-@st.cache_data(ttl=1800) # 快取 30 分鐘
+@st.cache_data(ttl=1800)
 def get_exchange_rate(from_currency="USD", to_currency="TWD"):
-    """使用 yfinance 獲取即時匯率。"""
     try:
         ticker_str = f"{from_currency}{to_currency}=X"
         ticker = yf.Ticker(ticker_str)
@@ -168,11 +170,11 @@ def get_exchange_rate(from_currency="USD", to_currency="TWD"):
             return data['Close'].iloc[-1]
     except Exception as e:
         print(f"獲取匯率 {ticker_str} 時出錯: {e}")
-    return 30 # 如果失敗，返回一個預設值
+    return 32.5
 
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
-# 移除了全局的 st.title
+st.title("📈 AI 投資儀表板")
 
 # 側邊欄
 if 'user_id' not in st.session_state:
@@ -208,7 +210,7 @@ else:
 if 'user_id' in st.session_state:
     user_id = st.session_state['user_id']
     st.sidebar.header("導覽")
-    page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True, label_visibility="collapsed")
+    page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True)
 
     if page == "資產概覽":
         st.header("📊 資產概覽")
@@ -231,38 +233,37 @@ if 'user_id' in st.session_state:
                         st.success("資產已成功新增！");st.cache_data.clear();st.rerun()
                     else: st.error("代號、數量、成本價為必填欄位，且必須大於 0。")
         st.markdown("---")
+        
         assets_df = load_user_assets_from_firestore(user_id)
         quotes_df = load_quotes_from_firestore()
-
-        # --- [v2.6.1] 台幣本位制修改 ---
-        # 1. 獲取即時匯率
         usd_to_twd_rate = get_exchange_rate("USD", "TWD")
 
-        if assets_df.empty:st.info("您目前沒有資產。")
+        if assets_df.empty:
+            st.info("您目前沒有資產。")
         else:
-            df=pd.merge(assets_df,quotes_df,left_on='代號',right_on='Symbol',how='left')
-            for col in ['數量','成本價']:df[col]=pd.to_numeric(df[col],errors='coerce').fillna(0)
+            # --- [v2.7.0] 最終數據處理邏輯 ---
+            df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
+            
+            for col in ['數量', '成本價']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
             if 'Price' not in df.columns or df['Price'].isnull().all():
                 df['Price'] = df['成本價']
-                if 'warning_shown' not in st.session_state:
-                    st.warning("報價數據暫時無法獲取，目前「現價」以您的成本價計算。")
-                    st.session_state['warning_shown'] = True
-            
-            df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(df['成本價'])
+            else:
+                df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(df['成本價'])
+
+            # 1. 優先計算原幣別指標，確保欄位存在
             df['市值'] = df['Price'] * df['數量']
             df['成本'] = df['成本價'] * df['數量']
+            df['損益'] = df['市值'] - df['成本']
+            df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益']), where=df['成本']!=0) * 100
 
-            # --- [v2.6.2] 穩健的台幣換算邏輯 ---
+            # 2. 建立台幣市值欄位，用於總計與圖表
             df['市值_TWD'] = df['市值']
-            df['成本_TWD'] = df['成本']
             usd_mask = (df['幣別'] == 'USD') | (df['幣別'] == 'USDT')
             df.loc[usd_mask, '市值_TWD'] = df.loc[usd_mask, '市值'] * usd_to_twd_rate
-            df.loc[usd_mask, '成本_TWD'] = df.loc[usd_mask, '成本'] * usd_to_twd_rate
             
-
-            df['損益_TWD'] = df['市值_TWD'] - df['成本_TWD']
-            df['損益比'] = df.apply(lambda r: (r['損益_TWD'] / r['成本_TWD']) * 100 if r['成本_TWD'] != 0 else 0, axis=1)
-            
+            # 3. 資產分類
             def classify_asset(r):
                 t,s=r.get('類型','').lower(),r.get('代號','').upper()
                 if t=='加密貨幣':return '加密貨幣'
@@ -271,9 +272,9 @@ if 'user_id' in st.session_state:
                 return '其他資產'
             df['分類'] = df.apply(classify_asset, axis=1)
             
-
+            # 4. 計算台幣總計
             total_value_twd = df['市值_TWD'].sum()
-            total_cost_twd = df['成本_TWD'].sum()
+            total_cost_twd = df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
             total_pnl_twd = total_value_twd - total_cost_twd
             total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
             
@@ -282,7 +283,8 @@ if 'user_id' in st.session_state:
             k2.metric("總損益 (約 TWD)", f"${total_pnl_twd:,.0f}", f"{total_pnl_ratio:.2f}%")
             k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")
             st.markdown("---")
-            
+
+            # 5. 資產配置圓餅圖
             if total_value_twd > 0:
                 st.subheader("資產配置比例")
                 allocation_by_class = df.groupby('分類')['市值_TWD'].sum().reset_index()
@@ -290,13 +292,10 @@ if 'user_id' in st.session_state:
                 chart_col1, chart_col2 = st.columns(2)
                 with chart_col1:
                     fig_class = px.pie(allocation_by_class, names='分類', values='市值_TWD', title='依資產類別 (台幣計價)', hole=.3)
-                    fig_class.update_traces(textposition='inside', textinfo='percent+label')
                     st.plotly_chart(fig_class, use_container_width=True)
                 with chart_col2:
                     fig_currency = px.pie(allocation_by_currency, names='幣別', values='市值_TWD', title='依計價幣別 (台幣計價)', hole=.3)
-                    fig_currency.update_traces(textposition='inside', textinfo='percent+label')
                     st.plotly_chart(fig_currency, use_container_width=True)
-            
             st.markdown("---")
             
             if 'editing_asset_id' in st.session_state:
@@ -307,7 +306,7 @@ if 'user_id' in st.session_state:
                     if st.form_submit_button("儲存變更"):
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
-            
+
             col_title, col_time = st.columns([3, 1])
             with col_title:
                 st.subheader("我的投資組合")
@@ -318,43 +317,42 @@ if 'user_id' in st.session_state:
                     last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
-
+            
             categories=df['分類'].unique().tolist()
             asset_tabs=st.tabs(categories)
             
             for i, category in enumerate(categories):
                 with asset_tabs[i]:
                     category_df=df[df['分類']==category]
-                    cat_value=category_df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
-                    cat_cost=category_df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-                    cat_pnl = cat_value - cat_cost
-                    cat_pnl_ratio = (cat_pnl / cat_cost * 100) if cat_cost != 0 else 0
+                    cat_value_twd = category_df['市值_TWD'].sum()
+                    cat_cost_twd = category_df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
+                    cat_pnl_twd = cat_value_twd - cat_cost_twd
+                    cat_pnl_ratio = (cat_pnl_twd / cat_cost_twd * 100) if cat_cost_twd != 0 else 0
                     c1,c2=st.columns(2)
-                    c1.metric(f"{category} 市值 (約 USD)",f"${cat_value:,.2f}")
-                    c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
+                    c1.metric(f"{category} 市值 (約 TWD)",f"${cat_value_twd:,.0f}")
+                    c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
                     header_cols = st.columns([3, 2, 2, 2, 2, 2])
                     headers = ["持倉", "數量", "現價", "成本", "總市值", ""]
                     for col, header in zip(header_cols, headers):
                         col.markdown(f"**{header}**")
-                    
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
                         cols = st.columns([3, 2, 2, 2, 2, 2])
                         with cols[0]:
-                            st.markdown(f"<h5>{row['代號']}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row.get('代號', '')}</h5>", unsafe_allow_html=True)
                             st.caption(row.get('名稱') or row.get('類型', ''))
                         with cols[1]:
-                            st.markdown(f"<h5>{row['數量']:.4f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
                         with cols[2]:
-                            st.markdown(f"<h5>{row['Price']:,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row.get('Price', 0):,.2f}</h5>", unsafe_allow_html=True)
                         with cols[3]:
-                            st.markdown(f"<h5>{row['成本價']:,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
                         with cols[4]:
-                            st.markdown(f"<h5>{row['市值']:,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
                         with cols[5]:
                             btn_cols = st.columns([1,1])
                             if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
@@ -365,9 +363,9 @@ if 'user_id' in st.session_state:
                                 st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
                         
                         with st.expander("查看損益"):
-                            pnl = row['損益']
-                            pnl_ratio = row['損益比']
-                            st.metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            pnl = row.get('損益', 0)
+                            pnl_ratio = row.get('損益比', 0)
+                            st.metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
                         st.divider()
 
     elif page == "AI 新聞精選":
