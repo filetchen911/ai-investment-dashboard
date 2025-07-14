@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.4.2 - 最終排版修正版
+#  版本：v2.5.0 - 桌面最終版
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.4.2"
+APP_VERSION = "v2.5.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -275,45 +275,62 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [v2.4.2] 靜態表頭 ---
-                    header_cols = st.columns([1, 1])
-                    header_cols[0].markdown("##### 持倉")
-                    header_cols[1].markdown("<h5 style='text-align: right;'>價格與市值</h5>", unsafe_allow_html=True)
+                    # --- [v2.5.0] 桌面版多欄位表頭 ---
+                    header_cols = st.columns([3, 2, 2, 2, 2, 2])
+                    header_cols[0].markdown("**持倉**")
+                    header_cols[1].markdown("**數量**")
+                    header_cols[2].markdown("**現價**")
+                    header_cols[3].markdown("**成本**")
+                    header_cols[4].markdown("**總市值**")
+                    header_cols[5].markdown("<p style='text-align: right;'><b>操作</b></p>", unsafe_allow_html=True)
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
-                    # --- [重大修改] v2.4.2 最終版卡片式佈局 ---
+                    # --- [v2.5.0] 桌面版資產列表 ---
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
                         
-                        with st.container(border=True):
-                            # 第一行：主要資訊
-                            col1, col2 = st.columns([1, 1])
-                            with col1:
-                                st.markdown(f"<h3>{row['代號']}</h3>", unsafe_allow_html=True)
-                                st.caption(row.get('名稱') or row.get('類型', ''))
-                                st.write(f"{row['數量']:.4f} 股")
-                            with col2:
-                                st.markdown(f"<h3 style='text-align: right;'>{row['Price']:,.2f}</h3>", unsafe_allow_html=True)
-                                st.markdown(f"<p style='text-align: right; margin-top: 1rem;'>{row['市值']:,.2f}</p>", unsafe_allow_html=True)
+                        # 使用 st.columns 實現水平多欄位佈局
+                        cols = st.columns([3, 2, 2, 2, 2, 2])
 
-                            # 第二行：可展開的詳細資訊
-                            with st.expander("查看成本與總損益"):
-                                pnl = row['損益']
-                                pnl_ratio = row['損益比']
-                                detail_cols = st.columns(2)
-                                detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
-                                detail_cols[1].metric(f"總損益 ({row['幣別']})", f"{pnl:,.2f}", f"{pnl_ratio:.2f}%")
-                            
-                            # 第三行：操作按鈕
-                            btn_cols = st.columns([8, 1, 1])
-                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
-                                st.session_state['editing_asset_id'] = doc_id
-                                st.rerun()
-                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
-                                db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                st.success(f"資產 {row['代號']} 已刪除！")
-                                st.cache_data.clear()
-                                st.rerun()
+                        # 使用 st.markdown 和 h4 標籤來放大字體
+                        with cols[0]:
+                            st.markdown(f"<h4>{row['代號']}</h4>", unsafe_allow_html=True)
+                            st.caption(row.get('名稱') or row.get('類型', ''))
+                        
+                        with cols[1]:
+                            st.markdown(f"<h4>{row['數量']:.4f}</h4>", unsafe_allow_html=True)
+                        
+                        with cols[2]:
+                            st.markdown(f"<h4>{row['Price']:,.2f}</h4>", unsafe_allow_html=True)
+
+                        with cols[3]:
+                            st.markdown(f"<h4>{row['成本價']:,.2f}</h4>", unsafe_allow_html=True)
+                        
+                        with cols[4]:
+                            st.markdown(f"<h4>{row['市值']:,.2f}</h4>", unsafe_allow_html=True)
+
+                        # 將編輯和刪除按鈕放在最後一欄
+                        with cols[5]:
+                            # 使用 st.columns 讓按鈕在自己的欄位中並排
+                            btn_cols = st.columns([1,1])
+                            with btn_cols[0]:
+                                if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
+                                    st.session_state['editing_asset_id'] = doc_id
+                                    st.rerun()
+                            with btn_cols[1]:
+                                if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
+                                    db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
+                                    st.success(f"資產 {row['代號']} 已刪除！")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                        
+                        # 將損益相關資訊放入可展開的區域
+                        with st.expander("查看損益"):
+                            pnl = row['損益']
+                            pnl_ratio = row['損益比']
+                            st.metric(label=f"總損益 ({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                        
+                        st.divider()
                                 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
