@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.6.0 - 資產配置可視化版
+#  版本：v2.6.1 - 台幣本位版
 # ========================================================
 
 # --- 核心導入 ---
@@ -17,7 +17,7 @@ import firebase_admin
 from firebase_admin import credentials, auth, firestore
 import plotly.express as px # <--- 新增 Plotly 導入
 
-APP_VERSION = "v2.6.0"
+APP_VERSION = "v2.6.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -156,6 +156,20 @@ def load_latest_economic_data():
         st.error(f"讀取宏觀經濟數據時發生錯誤: {e}")
         return None
 
+# --- [新增] 匯率獲取函數 ---
+@st.cache_data(ttl=1800) # 快取 30 分鐘
+def get_exchange_rate(from_currency="USD", to_currency="TWD"):
+    """使用 yfinance 獲取即時匯率。"""
+    try:
+        ticker_str = f"{from_currency}{to_currency}=X"
+        ticker = yf.Ticker(ticker_str)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return data['Close'].iloc[-1]
+    except Exception as e:
+        print(f"獲取匯率 {ticker_str} 時出錯: {e}")
+    return 30 # 如果失敗，返回一個預設值
+
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
 # 移除了全局的 st.title
@@ -217,7 +231,13 @@ if 'user_id' in st.session_state:
                         st.success("資產已成功新增！");st.cache_data.clear();st.rerun()
                     else: st.error("代號、數量、成本價為必填欄位，且必須大於 0。")
         st.markdown("---")
-        assets_df,quotes_df=load_user_assets_from_firestore(user_id),load_quotes_from_firestore()
+        assets_df = load_user_assets_from_firestore(user_id)
+        quotes_df = load_quotes_from_firestore()
+
+        # --- [v2.6.1] 台幣本位制修改 ---
+        # 1. 獲取即時匯率
+        usd_to_twd_rate = get_exchange_rate("USD", "TWD")
+
         if assets_df.empty:st.info("您目前沒有資產。")
         else:
             df=pd.merge(assets_df,quotes_df,left_on='代號',right_on='Symbol',how='left')
@@ -231,6 +251,16 @@ if 'user_id' in st.session_state:
                 if 'warning_shown' not in st.session_state:
                     st.warning("報價數據暫時無法獲取，目前「現價」與「市值」以您的成本價計算。")
                     st.session_state['warning_shown'] = True
+
+            # 2. 統一換算為台幣市值與成本
+            def to_twd(row, column_name):
+                if row['幣別'] == 'USD':
+                    return row[column_name] * usd_to_twd_rate
+                elif row['幣別'] == 'USDT': # 假設 USDT 等於 USD
+                    return row[column_name] * usd_to_twd_rate
+                else: # 假設為 TWD
+                    return row[column_name]
+
             df['成本']=df['成本價']*df['數量']
             df['損益']=df['市值']-df['成本']
             df['損益比']=df.apply(lambda r:(r['損益']/r['成本'])*100 if r['成本']!=0 else 0,axis=1)
@@ -241,30 +271,34 @@ if 'user_id' in st.session_state:
                 if t in ['股票','etf']:return '美股/其他海外ETF'
                 return '其他資產'
             df['分類']=df.apply(classify_asset,axis=1)
-            total_value_usd=df.apply(lambda r:r['市值']/32 if r['幣別']=='TWD' else r['市值'],axis=1).sum()
-            total_cost_usd=df.apply(lambda r:r['成本']/32 if r['幣別']=='TWD' else r['成本'],axis=1).sum()
-            total_pnl_usd = total_value_usd - total_cost_usd
-            total_pnl_ratio = (total_pnl_usd / total_cost_usd * 100) if total_cost_usd != 0 else 0
             
-            k1,k2=st.columns(2)
-            k1.metric("總資產價值 (約 USD)", f"${total_value_usd:,.2f}")
-            k2.metric("總損益 (約 USD)", f"${total_pnl_usd:,.2f}", f"{total_pnl_ratio:.2f}%")
+
+            # 3. 更新總覽指標為台幣
+            total_value_twd = df['市值_TWD'].sum()
+            total_cost_twd = df['成本_TWD'].sum()
+            total_pnl_twd = total_value_twd - total_cost_twd
+            total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
+            
+            k1, k2, k3 = st.columns(3)
+            k1.metric("總資產價值 (約 TWD)", f"${total_value_twd:,.0f}")
+            k2.metric("總損益 (約 TWD)", f"${total_pnl_twd:,.0f}", f"{total_pnl_ratio:.2f}%")
+            k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")
             st.markdown("---")
             
             # --- [新功能 v2.6.0] 資產配置圓餅圖 ---
-            if total_value_usd > 0:
+            # 4. 更新圓餅圖的數據來源為台幣市值
+            if total_value_twd > 0:
                 st.subheader("資產配置比例")
-                df['市值_USD'] = df.apply(lambda r: r['市值'] / 32 if r['幣別'] == 'TWD' else r['市值'], axis=1)
-                allocation_by_class = df.groupby('分類')['市值_USD'].sum().reset_index()
-                allocation_by_currency = df.groupby('幣別')['市值_USD'].sum().reset_index()
+                allocation_by_class = df.groupby('分類')['市值_TWD'].sum().reset_index()
+                allocation_by_currency = df.groupby('幣別')['市值_TWD'].sum().reset_index()
 
                 chart_col1, chart_col2 = st.columns(2)
                 with chart_col1:
-                    fig_class = px.pie(allocation_by_class, names='分類', values='市值_USD', title='依資產類別', hole=.3)
+                    fig_class = px.pie(allocation_by_class, names='分類', values='市值_TWD', title='依資產類別 (台幣計價)', hole=.3)
                     fig_class.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05] * len(allocation_by_class))
                     st.plotly_chart(fig_class, use_container_width=True)
                 with chart_col2:
-                    fig_currency = px.pie(allocation_by_currency, names='幣別', values='市值_USD', title='依計價幣別', hole=.3)
+                    fig_currency = px.pie(allocation_by_currency, names='幣別', values='市值_TWD', title='依計價幣別 (台幣計價)', hole=.3)
                     fig_currency.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05] * len(allocation_by_currency))
                     st.plotly_chart(fig_currency, use_container_width=True)
             
