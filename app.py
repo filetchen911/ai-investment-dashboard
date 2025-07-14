@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.4.0 - 桌面優化版
+#  版本：v2.4.1 - 最終完整功能版
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.4.0"
+APP_VERSION = "v2.4.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -40,7 +40,6 @@ try:
     db = firestore.client()
 except Exception as e:
     st.error("⚠️ Secrets 配置錯誤或 Firebase 初始化失敗。")
-    st.error(f"詳細錯誤: {e}")
     st.stop()
 
 
@@ -158,7 +157,7 @@ def load_latest_economic_data():
 
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
-# st.title("📈 AI 投資儀表板") # 標題移到各頁面
+# 移除了全局的 st.title
 
 # 側邊欄
 if 'user_id' not in st.session_state:
@@ -194,7 +193,7 @@ else:
 if 'user_id' in st.session_state:
     user_id = st.session_state['user_id']
     st.sidebar.header("導覽")
-    page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True)
+    page = st.sidebar.radio("選擇頁面", ["資產概覽", "AI 新聞精選", "決策輔助指標"], horizontal=True, label_visibility="collapsed")
 
     if page == "資產概覽":
         st.header("📊 資產概覽")
@@ -259,7 +258,7 @@ if 'user_id' in st.session_state:
                     if st.form_submit_button("儲存變更"):
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
-
+            
             st.subheader("我的投資組合")
             categories=df['分類'].unique().tolist()
             asset_tabs=st.tabs(categories)
@@ -276,49 +275,98 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [v2.4.0] 桌面優化版 - 多欄位表格佈局 ---
-                    # 建立表頭
-                    header_cols = st.columns([3, 2, 2, 2, 2, 2, 1, 1])
-                    headers = ["資產", "數量", "成本", "現價", "市值", "損益", "", ""]
-                    for col, header in zip(header_cols, headers):
-                        col.markdown(f"**{header}**")
-                    
-                    st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
+                    header_cols = st.columns([6, 4])
+                    header_cols[0].markdown("**持倉**")
+                    header_cols[1].markdown("<p style='text-align: right;'><b>價格與市值</b></p>", unsafe_allow_html=True)
+                    st.markdown('<hr style="margin-top:0; padding:0; opacity: 0.3;">', unsafe_allow_html=True)
 
-                    # 遍歷資產，渲染每一行
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
-                        pnl = row['損益']
-                        pnl_ratio = row['損益比']
-                        
-                        cols = st.columns([3, 2, 2, 2, 2, 2, 1, 1])
-                        
-                        cols[0].markdown(f"**{row['代號']}**")
-                        cols[0].caption(row.get('名稱') or row.get('類型', ''))
-                        
-                        cols[1].markdown(f"{row['數量']:.4f}")
-                        cols[2].markdown(f"{row['成本價']:,.2f}")
-                        cols[3].markdown(f"{row['Price']:,.2f}")
-                        cols[4].markdown(f"{row['市值']:,.2f}")
-                        
-                        # 使用 metric 來顯示帶有顏色和百分比的損益
-                        cols[5].metric(label=f"({row['幣別']})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%", label_visibility="collapsed")
-                        
-                        if cols[6].button("✏️", key=f"edit_{doc_id}", help="編輯"):
-                            st.session_state['editing_asset_id'] = doc_id
-                            st.rerun()
-                        if cols[7].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
-                            db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                            st.success(f"資產 {row['代號']} 已刪除！")
-                            st.cache_data.clear()
-                            st.rerun()
-
+                        with st.container(border=True):
+                            st.markdown(f"""
+                            <div class="card-main-row">
+                                <div class="card-asset-info">
+                                    <p class="asset-symbol">{row['代號']}</p>
+                                    <p class="asset-name">{row.get('名稱') or row.get('類型', '')}</p>
+                                    <p class="asset-qty">{row['數量']:.4f} 股</p>
+                                </div>
+                                <div class="card-asset-value">
+                                    <p class="value-amount">{row['Price']:,.2f}</p>
+                                    <p class="value-amount" style="margin-top: 1.2rem;">{row['市值']:,.2f}</p>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            with st.expander("查看成本與總損益"):
+                                pnl, pnl_ratio = row['損益'], row['損益比']
+                                detail_cols = st.columns(2)
+                                detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
+                                detail_cols[1].metric(f"總損益 ({row['幣別']})", f"{pnl:,.2f}", f"{pnl_ratio:.2f}%")
+                            btn_cols = st.columns([10, 1, 1])
+                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯"):
+                                st.session_state['editing_asset_id'] = doc_id
+                                st.rerun()
+                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
+                                db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
+                                st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
 
     elif page == "AI 新聞精選":
-        # ... (此頁面程式碼與 v1.9.0 相同，省略) ...
+        st.header("💡 AI 每日市場洞察")
+        insights_data = load_latest_insights(user_id)
+        if insights_data:
+            st.caption(f"上次分析時間: {datetime.datetime.now(datetime.timezone.utc).astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')} (台北時間)")
+            st.subheader("今日市場總結")
+            st.info(insights_data.get('market_summary', '暫無總結。'))
+            st.subheader("對您投資組合的潛在影響")
+            st.warning(insights_data.get('portfolio_impact', '暫無影響分析。'))
+            st.markdown("---")
+            st.subheader("核心洞見摘要")
+            key_takeaways = insights_data.get('key_takeaways', [])
+            if not key_takeaways:
+                st.write("今日無核心洞見。")
+            else:
+                for item in key_takeaways:
+                    icon = "📊" if item.get('type') == '數據洞見' else "📰"
+                    with st.container(border=True):
+                        st.markdown(f"**{icon} {item.get('type', '洞見')}** | 來源：{item.get('source', '未知')}")
+                        st.write(item.get('content', ''))
+                        if item.get('type') == '新聞洞見' and item.get('link'):
+                            st.link_button("查看原文", item['link'])
+        else:
+            st.info("今日的 AI 分析尚未生成，或正在處理中。")
 
     elif page == "決策輔助指標":
-        # ... (此頁面程式碼與 v1.9.0 相同，省略) ...
-
+        st.header("📈 關鍵經濟指標趨勢")
+        economic_data_report = load_latest_economic_data()
+        if economic_data_report:
+            if 'date' in economic_data_report and isinstance(economic_data_report.get('date'), datetime.datetime):
+                last_update_time = economic_data_report['date'].strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                last_update_time = "N/A"
+            st.caption(f"數據來源：{economic_data_report.get('source_name', '未知')} | 上次更新時間 (UTC): {last_update_time}")
+            
+            st.subheader("宏觀經濟數據趨勢")
+            indicators = economic_data_report.get('data_series_items', [])
+            if not indicators:
+                st.write("暫無宏觀經濟數據。")
+            else:
+                col1, col2 = st.columns(2)
+                for i, indicator in enumerate(indicators):
+                    target_col = col1 if i % 2 == 0 else col2
+                    with target_col:
+                        with st.container(border=True):
+                            st.markdown(f"**{indicator.get('event', '未知指標')}**")
+                            values = indicator.get('values', [])
+                            if values:
+                                chart_df = pd.DataFrame(values)
+                                chart_df['date'] = pd.to_datetime(chart_df['date'])
+                                chart_df = chart_df.set_index('date')
+                                chart_df['value'] = pd.to_numeric(chart_df['value'])
+                                latest_point = values[-1]
+                                st.metric(label=f"最新數據 ({latest_point['date']})", value=f"{latest_point['value']}")
+                                st.line_chart(chart_df)
+                            else:
+                                st.write("暫無趨勢數據。")
+        else:
+            st.info("今日的宏觀經濟數據尚未生成，或正在處理中。")
 else:
     st.info("👋 請從左側側邊欄登入或註冊，以開始使用您的 AI 投資儀表板。")
