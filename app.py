@@ -2,9 +2,9 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.0.2 - 手機排版優化版
+#  版本：v2.1.0 - GPT設計手機排版優化版
 #  功能：
-#  - 重構「資產概覽」頁面為卡片式佈局，優化手機瀏覽體驗
+#  - 手機友善優化策略
 # ========================================================
 
 # --- 核心導入 ---
@@ -18,7 +18,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.0.2"
+APP_VERSION = "v2.1.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -299,29 +299,27 @@ if 'user_id' in st.session_state:
                             st.markdown("---") # 加上一條分隔線，讓佈局更清晰
                             
                             # 第二行：詳細數據和操作按鈕
-                            col_a, col_b, col_c, col_d = st.columns([3, 3, 1, 1])
-                            
-                            with col_a:
-                                st.markdown(f"**市值**")
-                                st.markdown(f"### {row['市值']:,.2f}")
-                            
-                            with col_b:
-                                st.markdown(f"**持有數量**")
-                                st.markdown(f"### {row['數量']:.4f}")
-                                
-                            with col_c:
-                                # [修正] 編輯按鈕，移除 use_container_width
+                            # 第一排：市值與數量
+                            col_left, col_right = st.columns([6, 4])
+                            with col_left:
+                                st.markdown(f"**市值：** {row['市值']:,.2f} {row['幣別']}")
+                                st.markdown(f"**持有數量：** {row['數量']:.4f}")
+                            with col_right:
+                                st.metric(label="損益", value=f"{pnl:,.2f} {row['幣別']}", delta=f"{pnl_ratio:.2f}%")
+
+                            # 第二排：操作按鈕（併排）
+                            col_edit, col_delete = st.columns([1, 1])
+                            with col_edit:
                                 if st.button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
                                     st.session_state['editing_asset_id'] = doc_id
                                     st.rerun()
-
-                            with col_d:
-                                # [修正] 刪除按鈕，移除 use_container_width
+                            with col_delete:
                                 if st.button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
                                     db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                     st.success(f"資產 {row['代號']} 已刪除！")
                                     st.cache_data.clear()
                                     st.rerun()
+
 
                             # 第三行：可展開的更詳細資訊
                             with st.expander("查看成本與現價"):
