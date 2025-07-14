@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.4.1 - 最終完整功能版
+#  版本：v2.4.2 - 最終排版修正版
 # ========================================================
 
 # --- 核心導入 ---
@@ -16,7 +16,7 @@ import yfinance as yf
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
-APP_VERSION = "v2.4.1"
+APP_VERSION = "v2.4.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -275,40 +275,46 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 USD)",f"${cat_pnl:,.2f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    header_cols = st.columns([6, 4])
-                    header_cols[0].markdown("**持倉**")
-                    header_cols[1].markdown("<p style='text-align: right;'><b>價格與市值</b></p>", unsafe_allow_html=True)
-                    st.markdown('<hr style="margin-top:0; padding:0; opacity: 0.3;">', unsafe_allow_html=True)
+                    # --- [v2.4.2] 靜態表頭 ---
+                    header_cols = st.columns([1, 1])
+                    header_cols[0].markdown("##### 持倉")
+                    header_cols[1].markdown("<h5 style='text-align: right;'>價格與市值</h5>", unsafe_allow_html=True)
+                    st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
+                    # --- [重大修改] v2.4.2 最終版卡片式佈局 ---
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
+                        
                         with st.container(border=True):
-                            st.markdown(f"""
-                            <div class="card-main-row">
-                                <div class="card-asset-info">
-                                    <p class="asset-symbol">{row['代號']}</p>
-                                    <p class="asset-name">{row.get('名稱') or row.get('類型', '')}</p>
-                                    <p class="asset-qty">{row['數量']:.4f} 股</p>
-                                </div>
-                                <div class="card-asset-value">
-                                    <p class="value-amount">{row['Price']:,.2f}</p>
-                                    <p class="value-amount" style="margin-top: 1.2rem;">{row['市值']:,.2f}</p>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # 第一行：主要資訊
+                            col1, col2 = st.columns([1, 1])
+                            with col1:
+                                st.markdown(f"<h3>{row['代號']}</h3>", unsafe_allow_html=True)
+                                st.caption(row.get('名稱') or row.get('類型', ''))
+                                st.write(f"{row['數量']:.4f} 股")
+                            with col2:
+                                st.markdown(f"<h3 style='text-align: right;'>{row['Price']:,.2f}</h3>", unsafe_allow_html=True)
+                                st.markdown(f"<p style='text-align: right; margin-top: 1rem;'>{row['市值']:,.2f}</p>", unsafe_allow_html=True)
+
+                            # 第二行：可展開的詳細資訊
                             with st.expander("查看成本與總損益"):
-                                pnl, pnl_ratio = row['損益'], row['損益比']
+                                pnl = row['損益']
+                                pnl_ratio = row['損益比']
                                 detail_cols = st.columns(2)
                                 detail_cols[0].metric(f"平均成本 ({row['幣別']})", f"{row['成本價']:,.2f}")
                                 detail_cols[1].metric(f"總損益 ({row['幣別']})", f"{pnl:,.2f}", f"{pnl_ratio:.2f}%")
-                            btn_cols = st.columns([10, 1, 1])
-                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯"):
+                            
+                            # 第三行：操作按鈕
+                            btn_cols = st.columns([8, 1, 1])
+                            if btn_cols[1].button("✏️", key=f"edit_{doc_id}", help="編輯此資產"):
                                 st.session_state['editing_asset_id'] = doc_id
                                 st.rerun()
-                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
+                            if btn_cols[2].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產"):
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
-
+                                st.success(f"資產 {row['代號']} 已刪除！")
+                                st.cache_data.clear()
+                                st.rerun()
+                                
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
         insights_data = load_latest_insights(user_id)
