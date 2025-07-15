@@ -2,9 +2,9 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.7.1 - 資產佔比版
+#  版本：v2.8.1 - 最終版
 #  功能：
-#  - 在資產摺疊區新增「資產佔比」指標
+#  - 將「今日漲跌」與「現價」整合顯示，優化介面
 # ========================================================
 
 # --- 核心導入 ---
@@ -20,7 +20,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.7.1"
+APP_VERSION = "v2.8.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -243,13 +243,18 @@ if 'user_id' in st.session_state:
             # --- [v2.7.0] 最終數據處理邏輯 ---
             df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
             
-            for col in ['數量', '成本價']:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            # --- [v2.8.0] 數據處理核心邏輯 (含今日漲跌) ---
+            for col in ['數量', '成本價']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
             if 'Price' not in df.columns or df['Price'].isnull().all():
                 df['Price'] = df['成本價']
             else:
                 df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(df['成本價'])
+
+            if 'PreviousClose' not in df.columns or df['PreviousClose'].isnull().all():
+                df['PreviousClose'] = df['Price']
+            else:
+                df['PreviousClose'] = pd.to_numeric(df['PreviousClose'], errors='coerce').fillna(df['Price'])
 
             # 1. 優先計算原幣別指標，確保欄位存在
             df['市值'] = df['Price'] * df['數量']
@@ -338,11 +343,13 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    header_cols = st.columns([3, 2, 2, 2, 2, 2])
-                    headers = ["持倉", "數量", "現價", "成本", "總市值", ""]
+                    # --- [v2.8.1] 最終版 - 多欄位表格佈局 (含今日漲跌) ---
+                    header_cols = st.columns([3, 2, 3, 2, 2, 2])
+                    headers = ["持倉", "數量", "現價 (今日漲跌)", "成本", "市值", ""]
                     for col, header in zip(header_cols, headers):
                         col.markdown(f"**{header}**")
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
+
 
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
@@ -352,12 +359,17 @@ if 'user_id' in st.session_state:
                             st.caption(row.get('名稱') or row.get('類型', ''))
                         with cols[1]:
                             st.markdown(f"<h5>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
+                        # [重大修改] 將現價和今日漲跌整合到一個 metric 中
                         with cols[2]:
-                            st.markdown(f"<h5>{row.get('Price', 0):,.2f}</h5>", unsafe_allow_html=True)
+                            st.metric(label="", value=f"{row.get('Price', 0):,.2f}", 
+                                      delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
+                                      label_visibility="collapsed")
+
                         with cols[3]:
                             st.markdown(f"<h5>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
                         with cols[4]:
                             st.markdown(f"<h5>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
+
                         with cols[5]:
                             btn_cols = st.columns([1,1])
                             if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
@@ -367,19 +379,17 @@ if 'user_id' in st.session_state:
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                 st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
                         
-                        # --- [v2.7.1] 擴充摺疊區，新增資產佔比 ---
-                        with st.expander("查看損益與佔比"):
+                        # --- [v2.8.0] 擴充摺疊區，新增資產佔比 ---
+                        with st.expander("查看詳細分析"):
                             pnl = row.get('損益', 0)
                             pnl_ratio = row.get('損益比', 0)
-                            asset_weight = row.get('佔比', 0)
+                            asset_weight = (row.get('市值_TWD', 0) / total_value_twd * 100) if total_value_twd > 0 else 0
                             
                             expander_cols = st.columns(2)
-                            with expander_cols[0]:
-                                st.metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-                            with expander_cols[1]:
-                                st.metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
-
+                            expander_cols[0].metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            expander_cols[1].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
+
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
