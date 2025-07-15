@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.9.2 - 最終完美版
+#  版本：v2.9.3 - 最終排版微調版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.9.2"
+APP_VERSION = "v2.9.3"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -354,7 +354,8 @@ if 'user_id' in st.session_state:
                     st.markdown("---")
 
                     # --- [v2.9.2] 最終版桌面佈局 ---
-                    header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                    #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                    header_cols = st.columns([3, 1.5, 1.8, 1.8, 1.5, 1.5, 1.5])
                     headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
                     for col, header in zip(header_cols, headers):
                         col.markdown(f"**{header}**")
@@ -362,7 +363,8 @@ if 'user_id' in st.session_state:
 
                     for _, row in category_df.iterrows():
                         doc_id = row.get('doc_id')
-                        cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                        #cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                        cols = st.columns([3, 1.5, 1.8, 1.8, 1.5, 1.5, 1.5])
 
                         with cols[0]:
                             st.markdown(f"**{row.get('代號', '')}**")
