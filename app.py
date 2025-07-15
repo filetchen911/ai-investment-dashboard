@@ -172,7 +172,7 @@ def get_exchange_rate(from_currency="USD", to_currency="TWD"):
             return data['Close'].iloc[-1]
     except Exception as e:
         print(f"獲取匯率 {ticker_str} 時出錯: {e}")
-    return 32.5
+    return 30.0
 
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
