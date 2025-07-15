@@ -355,7 +355,7 @@ if 'user_id' in st.session_state:
 
                     # --- [v2.9.2] 最終版桌面佈局 ---
                     #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
-                    header_cols = st.columns([3, 1.5, 1.8, 1.8, 1.5, 1.5, 1.5])
+                    header_cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
                     headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
                     for col, header in zip(header_cols, headers):
                         col.markdown(f"**{header}**")
@@ -364,7 +364,7 @@ if 'user_id' in st.session_state:
                     for _, row in category_df.iterrows():
                         doc_id = row.get('doc_id')
                         #cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
-                        cols = st.columns([3, 1.5, 1.8, 1.8, 1.5, 1.5, 1.5])
+                        cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
 
                         with cols[0]:
                             st.markdown(f"**{row.get('代號', '')}**")
