@@ -353,7 +353,7 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [v2.8.1] 最終版 - 多欄位表格佈局 (含今日漲跌) ---
+                    # --- [v2.8.2] 最終版 - 統一渲染方式 ---
                     header_cols = st.columns([3, 2, 3, 2, 2, 2])
                     headers = ["持倉", "數量", "現價 (今日漲跌)", "成本", "市值", ""]
                     for col, header in zip(header_cols, headers):
@@ -361,34 +361,54 @@ if 'user_id' in st.session_state:
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
 
+                    # 遍歷資產，渲染每一行
                     for _, row in category_df.iterrows():
                         doc_id = row['doc_id']
-                        cols = st.columns([3, 2, 2, 2, 2, 2])
+                        
+                        cols = st.columns([3, 2, 3, 2, 2, 2])
+
+                        # --- 持倉 ---
                         with cols[0]:
                             st.markdown(f"<h5>{row.get('代號', '')}</h5>", unsafe_allow_html=True)
                             st.caption(row.get('名稱') or row.get('類型', ''))
+                        
+                        # --- 數量 ---
                         with cols[1]:
-                            st.markdown(f"<h5>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
-                        # [重大修改] 將現價和「單股」今日漲跌整合到一個 metric 中
-                        with cols[2]:
-                            st.metric(label="", value=f"{row.get('Price', 0):,.2f}", 
-                                      delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
-                                      label_visibility="collapsed")
-                        with cols[3]:
-                            st.markdown(f"<h5>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
-                        with cols[4]:
-                            st.markdown(f"<h5>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5 style='padding-top: 1rem;'>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
 
+                        # --- [重大修改] 現價 (今日漲跌) ---
+                        with cols[2]:
+                            daily_change = row.get('今日漲跌', 0)
+                            daily_change_pct = row.get('今日漲跌幅', 0)
+                            # 根據漲跌設定顏色
+                            delta_color = "green" if daily_change > 0 else "red" if daily_change < 0 else "gray"
+                            
+                            st.markdown(f"<h5>{row.get('Price', 0):,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<small style='color:{delta_color};'>{daily_change:+.2f} ({daily_change_pct:.2f}%)</small>", unsafe_allow_html=True)
+
+                        # --- 成本 ---
+                        with cols[3]:
+                            st.markdown(f"<h5 style='padding-top: 1rem;'>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
+                        
+                        # --- 市值 ---
+                        with cols[4]:
+                            st.markdown(f"<h5 style='padding-top: 1rem;'>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
+                        
+                        # --- 操作按鈕 ---
                         with cols[5]:
+                            # 增加一個空白的 st.markdown 來輔助垂直對齊
+                            st.markdown("<h5 style='color:transparent;'>.</h5>", unsafe_allow_html=True)
                             btn_cols = st.columns([1,1])
                             if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
                                 st.session_state['editing_asset_id'] = doc_id
                                 st.rerun()
                             if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
+                                st.success(f"資產 {row['代號']} 已刪除！")
+                                st.cache_data.clear()
+                                st.rerun()
                         
-                        # [重大修改] 擴充摺疊區，新增「今日總損益」
+                        # --- 摺疊區 ---
                         with st.expander("查看詳細分析"):
                             pnl = row.get('損益', 0)
                             pnl_ratio = row.get('損益比', 0)
