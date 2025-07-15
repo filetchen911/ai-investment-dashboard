@@ -399,7 +399,15 @@ if 'user_id' in st.session_state:
                                 st.rerun()
                         
                         with st.expander("查看詳細分析"):
-                            # ... (摺疊區內容不變) ...
+                            pnl = row.get('損益', 0)
+                            pnl_ratio = row.get('損益比', 0)
+                            today_pnl = row.get('今日總損益', 0)
+                            asset_weight = (row.get('市值_TWD', 0) / total_value_twd * 100) if total_value_twd > 0 else 0
+                            
+                            expander_cols = st.columns(3)
+                            expander_cols[0].metric(label="今日總損益", value=f"{today_pnl:,.2f} {row.get('幣別','')}")
+                            expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
 
 
