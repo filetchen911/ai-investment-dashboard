@@ -1,8 +1,8 @@
 # app.py
 
-# ========================================================
+## ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.8.3 - 最終桌面完美版
+#  版本：v2.8.4 - 最終排版定案
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.8.3"
+APP_VERSION = "v2.8.4"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -361,39 +361,42 @@ if 'user_id' in st.session_state:
                     st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
                     for _, row in category_df.iterrows():
-                        doc_id = row['doc_id']
+                        doc_id = row.get('doc_id')
                         cols = st.columns([3, 2, 3, 2, 2, 2])
 
                         with cols[0]:
                             st.markdown(f"<h5>{row.get('代號', '')}</h5>", unsafe_allow_html=True)
                             st.caption(row.get('名稱') or row.get('類型', ''))
+                        
                         with cols[1]:
-                            st.markdown(f"<h5>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5 style='padding-top: 1.1rem;'>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
                         
                         with cols[2]:
-                            st.metric(label="", value=f"{row.get('Price', 0):,.2f}", 
-                                      delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
-                                      label_visibility="collapsed")
+                            daily_change = row.get('今日漲跌', 0)
+                            daily_change_pct = row.get('今日漲跌幅', 0)
+                            delta_color = "green" if daily_change > 0 else "red" if daily_change < 0 else "#808080"
+                            
+                            st.markdown(f"<h5 style='margin-bottom: 0.1rem;'>{row.get('Price', 0):,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<small style='color:{delta_color};'>{daily_change:+.2f} ({daily_change_pct:+.2f}%)</small>", unsafe_allow_html=True)
+
                         with cols[3]:
-                            st.markdown(f"<h5>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
-                        with cols[4]:
-                            st.markdown(f"<h5>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"<h5 style='padding-top: 1.1rem;'>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
                         
-                        # --- 操作按鈕 ---
+                        with cols[4]:
+                            st.markdown(f"<h5 style='padding-top: 1.1rem;'>{row.get('市值', 0):,.2f}</h5>", unsafe_allow_html=True)
+                        
                         with cols[5]:
-                            # 增加一個空白的 st.markdown 來輔助垂直對齊
                             st.markdown("<h5 style='color:transparent;'>.</h5>", unsafe_allow_html=True)
                             btn_cols = st.columns([1,1])
-                            if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯此資產", use_container_width=True):
+                            if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯"):
                                 st.session_state['editing_asset_id'] = doc_id
                                 st.rerun()
-                            if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除此資產", use_container_width=True):
+                            if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                 st.success(f"資產 {row['代號']} 已刪除！")
                                 st.cache_data.clear()
                                 st.rerun()
                         
-                        # --- 摺疊區 ---
                         with st.expander("查看詳細分析"):
                             pnl = row.get('損益', 0)
                             pnl_ratio = row.get('損益比', 0)
@@ -405,6 +408,7 @@ if 'user_id' in st.session_state:
                             expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
                             expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
+
 
 
     elif page == "AI 新聞精選":
