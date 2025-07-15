@@ -2,10 +2,9 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.8.1 - 最終版
-#  功能：
-#  - 將「今日漲跌」與「現價」整合顯示，優化介面
+#  版本：v2.8.2 - 最終功能定案版
 # ========================================================
+
 
 # --- 核心導入 ---
 import streamlit as st
@@ -20,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.8.0"
+APP_VERSION = "v2.8.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -128,11 +127,15 @@ def load_user_assets_from_firestore(user_id):
 
 @st.cache_data(ttl=60)
 def load_quotes_from_firestore():
+    """[v2.8.2 修正版] 讀取報價，並確保處理 PreviousClose 欄位"""
     docs = db.collection('general_quotes').stream()
     df = pd.DataFrame([doc.to_dict() for doc in docs])
     if not df.empty:
         df['Symbol'] = df['Symbol'].astype(str)
-        df['Price'] = pd.to_numeric(df['Price'], errors='coerce')
+        # [修正] 同時將 Price 和 PreviousClose 都轉換為數字
+        for col in ['Price', 'PreviousClose']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
 @st.cache_data(ttl=900)
@@ -243,9 +246,10 @@ if 'user_id' in st.session_state:
             # --- [v2.7.0] 最終數據處理邏輯 ---
             df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
             
-            # --- [v2.8.0] 數據處理核心邏輯 (含今日漲跌) ---
+            # --- [v2.8.2] 數據處理核心邏輯 (含今日漲跌) ---
             for col in ['數量', '成本價']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
+            # 健壯地處理 Price 和 PreviousClose 的缺失值
             if 'Price' not in df.columns or df['Price'].isnull().all():
                 df['Price'] = df['成本價']
             else:
@@ -261,6 +265,12 @@ if 'user_id' in st.session_state:
             df['成本'] = df['成本價'] * df['數量']
             df['損益'] = df['市值'] - df['成本']
             df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益']), where=df['成本']!=0) * 100
+
+            # [修正] 確保計算時欄位都存在且為數字
+            df['今日漲跌'] = df['Price'] - df['PreviousClose']
+            # [新增] 市值今日變動總額
+            df['今日總損益'] = (df['Price'] - df['PreviousClose']) * df['數量']            
+            df['今日漲跌幅'] = np.divide((df['Price'] - df['PreviousClose']), df['PreviousClose'], out=np.zeros_like(df['Price'], dtype=float), where=df['PreviousClose']!=0) * 100
 
             # 2. 建立台幣市值欄位，用於總計與圖表
             df['市值_TWD'] = df['市值']
@@ -359,12 +369,11 @@ if 'user_id' in st.session_state:
                             st.caption(row.get('名稱') or row.get('類型', ''))
                         with cols[1]:
                             st.markdown(f"<h5>{row.get('數量', 0):.4f}</h5>", unsafe_allow_html=True)
-                        # [重大修改] 將現價和今日漲跌整合到一個 metric 中
+                        # [重大修改] 將現價和「單股」今日漲跌整合到一個 metric 中
                         with cols[2]:
                             st.metric(label="", value=f"{row.get('Price', 0):,.2f}", 
                                       delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
                                       label_visibility="collapsed")
-
                         with cols[3]:
                             st.markdown(f"<h5>{row.get('成本價', 0):,.2f}</h5>", unsafe_allow_html=True)
                         with cols[4]:
@@ -379,15 +388,17 @@ if 'user_id' in st.session_state:
                                 db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                 st.success(f"資產 {row['代號']} 已刪除！"); st.cache_data.clear(); st.rerun()
                         
-                        # --- [v2.8.0] 擴充摺疊區，新增資產佔比 ---
+                        # [重大修改] 擴充摺疊區，新增「今日總損益」
                         with st.expander("查看詳細分析"):
                             pnl = row.get('損益', 0)
                             pnl_ratio = row.get('損益比', 0)
+                            today_pnl = row.get('今日總損益', 0)
                             asset_weight = (row.get('市值_TWD', 0) / total_value_twd * 100) if total_value_twd > 0 else 0
                             
-                            expander_cols = st.columns(2)
-                            expander_cols[0].metric(label=f"總損益 ({row.get('幣別','')})", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-                            expander_cols[1].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
+                            expander_cols = st.columns(3)
+                            expander_cols[0].metric(label="今日總損益", value=f"{today_pnl:,.2f} {row.get('幣別','')}")
+                            expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                            expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
 
 
