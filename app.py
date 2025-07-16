@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.0.0 - 歷史淨值功能最終版
+#  版本：v3.0.1 - 歷史淨值圖表最終修正版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.0.0"
+APP_VERSION = "v3.0.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -335,7 +335,35 @@ if 'user_id' in st.session_state:
                     fig_currency = px.pie(allocation_by_currency, names='幣別', values='市值_TWD', title='依計價幣別 (台幣計價)', hole=.3)
                     st.plotly_chart(fig_currency, use_container_width=True)
             st.markdown("---")
-            
+
+            # --- [v3.0.0] 歷史淨值趨勢圖 ---
+            st.subheader("歷史淨值趨勢 (TWD)")
+            historical_df = load_historical_value(user_id)
+            if not historical_df.empty:
+                time_range = st.radio(
+                    "選擇時間範圍",
+                    ["最近30天", "最近90天", "今年以來", "所有時間"],
+                    horizontal=True
+                )
+                
+                today = pd.to_datetime(datetime.date.today())
+                if time_range == "最近30天":
+                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=30))]
+                elif time_range == "最近90天":
+                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=90))]
+                elif time_range == "今年以來":
+                    chart_data = historical_df[historical_df.index.year == today.year]
+                else:
+                    chart_data = historical_df
+                
+                # [v3.0.1 修正] 在繪圖前，將索引格式化為只有日期
+                if not chart_data.empty:
+                    # 我們直接繪製帶有正確索引的 DataFrame
+                    st.line_chart(chart_data['total_value_twd'])
+            else:
+                st.info("歷史淨值數據正在收集中，請於明日後查看。")
+            st.markdown("---")
+
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
                 with st.form("edit_asset_form"):
@@ -430,32 +458,6 @@ if 'user_id' in st.session_state:
                             expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
 
-
-
-            # --- [新增 v3.0.0] 歷史淨值趨勢圖 ---
-            st.subheader("歷史淨值趨勢 (TWD)")
-            historical_df = load_historical_value(user_id)
-            if not historical_df.empty:
-                time_range = st.radio(
-                    "選擇時間範圍",
-                    ["最近30天", "最近90天", "今年以來", "所有時間"],
-                    horizontal=True
-                )
-                
-                today = pd.to_datetime(datetime.date.today())
-                if time_range == "最近30天":
-                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=30))]
-                elif time_range == "最近90天":
-                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=90))]
-                elif time_range == "今年以來":
-                    chart_data = historical_df[historical_df.index.year == today.year]
-                else:
-                    chart_data = historical_df
-                
-                st.line_chart(chart_data['total_value_twd'])
-            else:
-                st.info("歷史淨值數據正在收集中，請於明日後查看。")
-            st.markdown("---")
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
