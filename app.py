@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.0.1 - 歷史淨值圖表最終修正版
+#  版本：v3.0.2 - 歷史淨值圖表最終修正版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.0.1"
+APP_VERSION = "v3.0.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -336,7 +336,7 @@ if 'user_id' in st.session_state:
                     st.plotly_chart(fig_currency, use_container_width=True)
             st.markdown("---")
 
-            # --- [v3.0.0] 歷史淨值趨勢圖 ---
+            # --- [v3.0.1] 歷史淨值趨勢圖 ---
             st.subheader("歷史淨值趨勢 (TWD)")
             historical_df = load_historical_value(user_id)
             if not historical_df.empty:
@@ -348,17 +348,17 @@ if 'user_id' in st.session_state:
                 
                 today = pd.to_datetime(datetime.date.today())
                 if time_range == "最近30天":
-                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=30))]
+                    chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=30))]
                 elif time_range == "最近90天":
-                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=90))]
+                    chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=90))]
                 elif time_range == "今年以來":
                     chart_data = historical_df[historical_df.index.year == today.year]
                 else:
                     chart_data = historical_df
                 
-                # [v3.0.1 修正] 在繪圖前，將索引格式化為只有日期
                 if not chart_data.empty:
-                    # 我們直接繪製帶有正確索引的 DataFrame
+                    # [v3.0.1 修正] 在繪圖前，將索引的格式變更，只保留日期
+                    chart_data.index = chart_data.index.strftime('%Y-%m-%d')
                     st.line_chart(chart_data['total_value_twd'])
             else:
                 st.info("歷史淨值數據正在收集中，請於明日後查看。")
