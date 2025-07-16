@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.0.2 - 歷史淨值圖表最終修正版
+#  版本：v3.0.3 - 最終圖表優化版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.0.2"
+APP_VERSION = "v3.0.3"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -336,16 +336,16 @@ if 'user_id' in st.session_state:
                     st.plotly_chart(fig_currency, use_container_width=True)
             st.markdown("---")
 
-            # --- [v3.0.1] 歷史淨值趨勢圖 ---
+            # --- [v3.0.3] 歷史淨值趨勢圖 (Plotly 專業版) ---
             st.subheader("歷史淨值趨勢 (TWD)")
             historical_df = load_historical_value(user_id)
+            
             if not historical_df.empty:
-                time_range = st.radio(
-                    "選擇時間範圍",
-                    ["最近30天", "最近90天", "今年以來", "所有時間"],
-                    horizontal=True
-                )
-                
+                # 讓使用者選擇時間範圍
+                time_range_options = ["最近30天", "最近90天", "今年以來", "所有時間"]
+                time_range = st.radio("選擇時間範圍", time_range_options, horizontal=True)
+
+                # 根據選擇篩選數據
                 today = pd.to_datetime(datetime.date.today())
                 if time_range == "最近30天":
                     chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=30))]
@@ -353,13 +353,31 @@ if 'user_id' in st.session_state:
                     chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=90))]
                 elif time_range == "今年以來":
                     chart_data = historical_df[historical_df.index.year == today.year]
-                else:
+                else: # 所有時間
                     chart_data = historical_df
-                
+
                 if not chart_data.empty:
-                    # [v3.0.1 修正] 在繪圖前，將索引的格式變更，只保留日期
-                    chart_data.index = chart_data.index.strftime('%Y-%m-%d')
-                    st.line_chart(chart_data['total_value_twd'])
+                    # 使用 Plotly 繪製更專業的圖表
+                    fig = px.line(chart_data, x=chart_data.index, y='total_value_twd', title="淨值走勢")
+                    
+                    # [修正一] 更新X軸，以「週」為單位顯示刻度，並旋轉標籤
+                    fig.update_xaxes(
+                        dtick="W1", # W1 代表每週顯示一個刻度
+                        tickformat="%Y-%m-%d", # 日期格式
+                        tickangle=-45 # 標籤旋轉45度，避免重疊
+                    )
+                    
+                    # [修正二] 更新佈局，禁用所有鼠標拖曳/縮放功能
+                    fig.update_layout(
+                        dragmode=False,
+                        xaxis=dict(fixedrange=True),
+                        yaxis=dict(fixedrange=True)
+                    )
+
+                    # [修正三] Plotly 會自動處理正負值，確保縱軸正確
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("所選時間範圍內沒有歷史數據。")
             else:
                 st.info("歷史淨值數據正在收集中，請於明日後查看。")
             st.markdown("---")
