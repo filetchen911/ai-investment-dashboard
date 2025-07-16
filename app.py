@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v2.9.3 - 最終排版微調版
+#  版本：v3.0.0 - 歷史淨值功能最終版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v2.9.3"
+APP_VERSION = "v3.0.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -173,6 +173,24 @@ def get_exchange_rate(from_currency="USD", to_currency="TWD"):
     except Exception as e:
         print(f"獲取匯率 {ticker_str} 時出錯: {e}")
     return 30.0
+
+# --- [新增 v3.0.0] 歷史淨值讀取函數 ---
+@st.cache_data(ttl=900)
+def load_historical_value(user_id):
+    """從 Firestore 讀取用戶的歷史資產淨值。"""
+    try:
+        query = db.collection('users').document(user_id).collection('historical_value').order_by('date', direction=firestore.Query.ASCENDING)
+        docs = list(query.stream())
+        if docs:
+            data = [doc.to_dict() for doc in docs]
+            df = pd.DataFrame(data)
+            df['date'] = pd.to_datetime(df['date'])
+            df.set_index('date', inplace=True)
+            return df
+        return pd.DataFrame() # 如果沒有歷史數據，返回空的 DataFrame
+    except Exception as e:
+        st.error(f"讀取歷史淨值時發生錯誤: {e}")
+        return pd.DataFrame()
 
 # --- APP 介面與主體邏輯 ---
 st.set_page_config(layout="wide", page_title="AI 投資儀表板")
@@ -414,6 +432,30 @@ if 'user_id' in st.session_state:
 
 
 
+            # --- [新增 v3.0.0] 歷史淨值趨勢圖 ---
+            st.subheader("歷史淨值趨勢 (TWD)")
+            historical_df = load_historical_value(user_id)
+            if not historical_df.empty:
+                time_range = st.radio(
+                    "選擇時間範圍",
+                    ["最近30天", "最近90天", "今年以來", "所有時間"],
+                    horizontal=True
+                )
+                
+                today = pd.to_datetime(datetime.date.today())
+                if time_range == "最近30天":
+                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=30))]
+                elif time_range == "最近90天":
+                    chart_data = historical_df[historical_df.index > (today - pd.DateOffset(days=90))]
+                elif time_range == "今年以來":
+                    chart_data = historical_df[historical_df.index.year == today.year]
+                else:
+                    chart_data = historical_df
+                
+                st.line_chart(chart_data['total_value_twd'])
+            else:
+                st.info("歷史淨值數據正在收集中，請於明日後查看。")
+            st.markdown("---")
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
