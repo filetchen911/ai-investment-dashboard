@@ -410,7 +410,6 @@ if 'user_id' in st.session_state:
                         c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
                         st.markdown("---")
 
-                        #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
                         header_cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
                         headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
                         for col, header in zip(header_cols, headers):
@@ -419,6 +418,7 @@ if 'user_id' in st.session_state:
 
                         for _, row in category_df.iterrows():
                             doc_id = row.get('doc_id')
+                            cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
                             with cols[0]:
                                 # [v3.1.3] 顯示時，移除台股的 .TW 後綴
                                 display_symbol = row.get('代號', '')
