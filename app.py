@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.0.3 - 最終圖表優化版
+#  版本：v3.1.0 - 資產分類重構版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.0.3"
+APP_VERSION = "v3.1.0"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -48,22 +48,33 @@ except Exception as e:
 
 # --- 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
-    price = None
+    price_data = {"price": None, "previous_close": None}
     try:
-        if asset_type.lower() in ["股票", "etf"]:
+        # [v3.1.0 修正] 根據新的資產類型抓取價格
+        asset_type_lower = asset_type.lower()
+        
+        if asset_type_lower == "現金":
+             return {"price": 1.0, "previous_close": 1.0}
+
+        if asset_type_lower in ["美股", "台股", "債券", "其他"]:
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period="1d")
-            if not data.empty: price = data['Close'].iloc[-1]
-        elif asset_type.lower() == "加密貨幣":
-            url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol.lower()}&vs_currencies={currency.lower()}"
+            hist = ticker.history(period="2d")
+            if not hist.empty:
+                price_data["price"] = hist['Close'].iloc[-1]
+                price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
+        
+        elif asset_type_lower == "加密貨幣":
+            coin_id = symbol.lower()
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
             response = requests.get(url).json()
-            if symbol.lower() in response and currency.lower() in response[symbol.lower()]:
-                price = response[symbol.lower()][currency.lower()]
+            if coin_id in response and currency.lower() in response[coin_id]:
+                price = response[coin_id][currency.lower()]
+                price_data = {"price": price, "previous_close": price}
     except Exception as e:
         print(f"獲取 {symbol} 報價時出錯: {e}")
-    return price
+    return price_data
 
-def get_all_symbols_from_firestore():
+def update_quotes_manually():
     db_client = firestore.client()
     all_symbols_to_fetch = set()
     for user_doc in db_client.collection('users').stream():
@@ -71,21 +82,23 @@ def get_all_symbols_from_firestore():
             asset_data = asset_doc.to_dict()
             if asset_data.get('代號') and asset_data.get('類型') and asset_data.get('幣別'):
                 all_symbols_to_fetch.add((asset_data['代號'], asset_data['類型'], asset_data['幣別']))
-    return list(all_symbols_to_fetch)
-
-def update_quotes_manually():
-    symbols_to_fetch = get_all_symbols_from_firestore()
+    symbols_to_fetch = list(all_symbols_to_fetch)
     if not symbols_to_fetch:
         st.toast("資料庫中無資產可更新。")
         return 0
-    quotes_batch = firestore.client().batch()
-    quotes_ref = firestore.client().collection('general_quotes')
+    quotes_batch = db_client.batch()
+    quotes_ref = db_client.collection('general_quotes')
     updated_count = 0
     progress_bar = st.progress(0, "開始更新報價...")
     for i, (symbol, asset_type, currency) in enumerate(symbols_to_fetch):
-        price = get_price(symbol, asset_type, currency)
-        if price is not None:
-            quotes_batch.set(quotes_ref.document(symbol), {"Symbol": symbol, "Price": round(float(price), 4), "Timestamp": firestore.SERVER_TIMESTAMP})
+        price_data = get_price(symbol, asset_type, currency)
+        if price_data and price_data.get("price") is not None:
+            quotes_batch.set(quotes_ref.document(symbol), {
+                "Symbol": symbol,
+                "Price": round(float(price_data['price']), 4),
+                "PreviousClose": round(float(price_data.get('previous_close', 0)), 4),
+                "Timestamp": firestore.SERVER_TIMESTAMP
+            })
             updated_count += 1
         progress_bar.progress((i + 1) / len(symbols_to_fetch), f"正在更新 {symbol}...")
     quotes_batch.commit()
@@ -127,12 +140,10 @@ def load_user_assets_from_firestore(user_id):
 
 @st.cache_data(ttl=60)
 def load_quotes_from_firestore():
-    """[v2.8.2 修正版] 讀取報價，並確保處理 PreviousClose 欄位"""
     docs = db.collection('general_quotes').stream()
     df = pd.DataFrame([doc.to_dict() for doc in docs])
     if not df.empty:
         df['Symbol'] = df['Symbol'].astype(str)
-        # [修正] 同時將 Price 和 PreviousClose 都轉換為數字
         for col in ['Price', 'PreviousClose']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -174,7 +185,6 @@ def get_exchange_rate(from_currency="USD", to_currency="TWD"):
         print(f"獲取匯率 {ticker_str} 時出錯: {e}")
     return 30.0
 
-# --- [新增 v3.0.0] 歷史淨值讀取函數 ---
 @st.cache_data(ttl=900)
 def load_historical_value(user_id):
     """從 Firestore 讀取用戶的歷史資產淨值。"""
@@ -187,7 +197,7 @@ def load_historical_value(user_id):
             df['date'] = pd.to_datetime(df['date'])
             df.set_index('date', inplace=True)
             return df
-        return pd.DataFrame() # 如果沒有歷史數據，返回空的 DataFrame
+        return pd.DataFrame() 
     except Exception as e:
         st.error(f"讀取歷史淨值時發生錯誤: {e}")
         return pd.DataFrame()
@@ -244,7 +254,9 @@ if 'user_id' in st.session_state:
         with st.expander("➕ 新增資產"):
             with st.form("add_asset_form", clear_on_submit=True):
                 c1,c2,c3=st.columns(3)
-                asset_type,symbol=c1.selectbox("類型",["股票","ETF","加密貨幣","其他"]),c1.text_input("代號")
+                # [v3.1.0 修正] 更新資產類型選項
+                asset_type = c1.selectbox("類型", ["美股", "台股", "債券", "加密貨幣", "現金", "其他"])
+                symbol = c1.text_input("代號", help="例如: 美股-VOO, 台股-0050.TW, 債券-TLT, 加密貨幣-bitcoin, 現金-TWD")
                 quantity,cost_basis=c2.number_input("持有數量",0.0,format="%.4f"),c2.number_input("平均成本",0.0,format="%.4f")
                 currency,name=c3.selectbox("幣別",["USD","TWD","USDT"]),c3.text_input("自訂名稱(可選)")
                 if st.form_submit_button("確定新增"):
@@ -261,13 +273,10 @@ if 'user_id' in st.session_state:
         if assets_df.empty:
             st.info("您目前沒有資產。")
         else:
-            # --- [v2.7.0] 最終數據處理邏輯 ---
             df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
             
-            # --- [v2.8.2] 數據處理核心邏輯 (含今日漲跌) ---
             for col in ['數量', '成本價']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # 健壯地處理 Price 和 PreviousClose 的缺失值
             if 'Price' not in df.columns or df['Price'].isnull().all():
                 df['Price'] = df['成本價']
             else:
@@ -278,39 +287,24 @@ if 'user_id' in st.session_state:
             else:
                 df['PreviousClose'] = pd.to_numeric(df['PreviousClose'], errors='coerce').fillna(df['Price'])
 
-            # 1. 優先計算原幣別指標，確保欄位存在
             df['市值'] = df['Price'] * df['數量']
             df['成本'] = df['成本價'] * df['數量']
             df['損益'] = df['市值'] - df['成本']
-            df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益']), where=df['成本']!=0) * 100
-
-            # [修正] 確保計算時欄位都存在且為數字
+            df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益'], dtype=float), where=df['成本']!=0) * 100
             df['今日漲跌'] = df['Price'] - df['PreviousClose']
-            # [新增] 市值今日變動總額
             df['今日總損益'] = (df['Price'] - df['PreviousClose']) * df['數量']            
             df['今日漲跌幅'] = np.divide((df['Price'] - df['PreviousClose']), df['PreviousClose'], out=np.zeros_like(df['Price'], dtype=float), where=df['PreviousClose']!=0) * 100
 
-            # 2. 建立台幣市值欄位，用於總計與圖表
-            df['市值_TWD'] = df['市值']
-            usd_mask = (df['幣別'] == 'USD') | (df['幣別'] == 'USDT')
-            df.loc[usd_mask, '市值_TWD'] = df.loc[usd_mask, '市值'] * usd_to_twd_rate
+            df['市值_TWD'] = df.apply(lambda r: r['市值'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['市值'], axis=1)
             
-            # 3. 資產分類
-            def classify_asset(r):
-                t,s=r.get('類型','').lower(),r.get('代號','').upper()
-                if t=='加密貨幣':return '加密貨幣'
-                if '.TW' in s or '.TWO' in s:return '台股/ETF'
-                if t in ['股票','etf']:return '美股/其他海外ETF'
-                return '其他資產'
-            df['分類'] = df.apply(classify_asset, axis=1)
+            # [v3.1.0 修正] 資產分類邏輯現在直接使用用戶選擇的類型
+            df['分類'] = df['類型']
             
-            # 4. 計算台幣總計
             total_value_twd = df['市值_TWD'].sum()
             total_cost_twd = df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
             total_pnl_twd = total_value_twd - total_cost_twd
             total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
 
-            # --- [新增 v2.7.1] 計算資產佔比 ---
             if total_value_twd > 0:
                 df['佔比'] = (df['市值_TWD'] / total_value_twd) * 100
             else:
@@ -322,7 +316,6 @@ if 'user_id' in st.session_state:
             k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")
             st.markdown("---")
 
-            # 5. 資產配置圓餅圖
             if total_value_twd > 0:
                 st.subheader("資產配置比例")
                 allocation_by_class = df.groupby('分類')['市值_TWD'].sum().reset_index()
@@ -336,8 +329,8 @@ if 'user_id' in st.session_state:
                     st.plotly_chart(fig_currency, use_container_width=True)
             st.markdown("---")
 
-            # --- [v3.0.3] 歷史淨值趨勢圖 (Plotly 專業版) ---
             st.subheader("歷史淨值趨勢 (TWD)")
+            historical_df = load_historical_value(user_id)
             historical_df = load_historical_value(user_id)
             
             if not historical_df.empty:
@@ -379,7 +372,7 @@ if 'user_id' in st.session_state:
                 else:
                     st.info("所選時間範圍內沒有歷史數據。")
             else:
-                st.info("歷史淨值數據正在收集中，請於明日後查看。")
+                st.info("歷史淨值數據正在收集中，請於明日後查看。")            
             st.markdown("---")
 
             if 'editing_asset_id' in st.session_state:
@@ -391,6 +384,7 @@ if 'user_id' in st.session_state:
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
                         st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
 
+            
             col_title, col_time = st.columns([3, 1])
             with col_title:
                 st.subheader("我的投資組合")
@@ -402,7 +396,8 @@ if 'user_id' in st.session_state:
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
             
-            categories=df['分類'].unique().tolist()
+            # [v3.1.0 修正] 分類頁籤現在直接使用新的分類
+            categories = df['分類'].unique().tolist()
             asset_tabs=st.tabs(categories)
             
             for i, category in enumerate(categories):
@@ -417,7 +412,6 @@ if 'user_id' in st.session_state:
                     c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
                     st.markdown("---")
 
-                    # --- [v2.9.2] 最終版桌面佈局 ---
                     #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
                     header_cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
                     headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
@@ -475,7 +469,6 @@ if 'user_id' in st.session_state:
                             expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
                             expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
                         st.divider()
-
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
@@ -537,4 +530,4 @@ if 'user_id' in st.session_state:
         else:
             st.info("今日的宏觀經濟數據尚未生成，或正在處理中。")
 else:
-    st.info("👋 請從左側側邊欄登入或註冊，以開始使用您的 AI 投資儀表板。")
+    st.info("👋 請從左側側邊欄登入或註冊。")
