@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.5 - 編輯與刪除功能最終修正版
+#  版本：v3.1.6 - 台股體驗優化版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.5"
+APP_VERSION = "v3.1.6"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -257,7 +257,7 @@ if 'user_id' in st.session_state:
                 if st.form_submit_button("確定新增"):
                     if symbol_input and quantity>0 and cost_basis>0:
                         final_symbol = symbol_input.strip()
-                        if asset_type == "台股" and not final_symbol.upper().endswith((".TW", ".TWO")):
+                        if asset_type in ["台股", "債券"] and not final_symbol.upper().endswith((".TW", ".TWO")):
                             final_symbol = f"{final_symbol}.TW"
                         
                         db.collection('users').document(user_id).collection('assets').add({
