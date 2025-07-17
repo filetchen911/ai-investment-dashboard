@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.3 - 台股體驗優化版
+#  版本：v3.1.4 - 編輯與刪除功能最終修正版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.3"
+APP_VERSION = "v3.1.4"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -251,13 +251,23 @@ if 'user_id' in st.session_state:
             with st.form("add_asset_form", clear_on_submit=True):
                 c1,c2,c3=st.columns(3)
                 asset_type = c1.selectbox("類型", ["美股", "台股", "債券", "加密貨幣", "現金", "其他"])
-                symbol = c1.text_input("代號", help="例如: 美股-VOO, 台股-0050.TW, 債券-TLT, 加密貨幣-bitcoin, 現金-TWD")
+                symbol_input = c1.text_input("代號", help="台股無需加 .TW 後綴")
                 quantity,cost_basis=c2.number_input("持有數量",0.0,format="%.4f"),c2.number_input("平均成本",0.0,format="%.4f")
                 currency,name=c3.selectbox("幣別",["USD","TWD","USDT"]),c3.text_input("自訂名稱(可選)")
                 if st.form_submit_button("確定新增"):
-                    if symbol and quantity>0 and cost_basis>0:
-                        db.collection('users').document(user_id).collection('assets').add({"類型":asset_type,"代號":symbol,"名稱":name,"數量":float(quantity),"成本價":float(cost_basis),"幣別":currency,"建立時間":firestore.SERVER_TIMESTAMP})
-                        st.success("資產已成功新增！");st.cache_data.clear();st.rerun()
+                    if symbol_input and quantity>0 and cost_basis>0:
+                        final_symbol = symbol_input.strip()
+                        if asset_type == "台股" and not final_symbol.upper().endswith((".TW", ".TWO")):
+                            final_symbol = f"{final_symbol}.TW"
+                        
+                        db.collection('users').document(user_id).collection('assets').add({
+                            "類型":asset_type, "代號":final_symbol, "名稱":name, 
+                            "數量":float(quantity), "成本價":float(cost_basis), 
+                            "幣別":currency, "建立時間":firestore.SERVER_TIMESTAMP
+                        })
+                        st.success("資產已成功新增！")
+                        st.cache_data.clear()
+                        st.rerun()
                     else: st.error("代號、數量、成本價為必填欄位，且必須大於 0。")
         st.markdown("---")
         
@@ -326,78 +336,40 @@ if 'user_id' in st.session_state:
             st.subheader("歷史淨值趨勢 (TWD)")
             historical_df = load_historical_value(user_id)
             historical_df = load_historical_value(user_id)
-            
-            if not historical_df.empty:
-                # 讓使用者選擇時間範圍
-                time_range_options = ["最近30天", "最近90天", "今年以來", "所有時間"]
-                time_range = st.radio("選擇時間範圍", time_range_options, horizontal=True)
 
-                # 根據選擇篩選數據
-                today = pd.to_datetime(datetime.date.today())
-                if time_range == "最近30天":
-                    chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=30))]
-                elif time_range == "最近90天":
-                    chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=90))]
-                elif time_range == "今年以來":
-                    chart_data = historical_df[historical_df.index.year == today.year]
-                else: # 所有時間
-                    chart_data = historical_df
-
-                if not chart_data.empty:
-                    # 使用 Plotly 繪製更專業的圖表
-                    fig = px.line(chart_data, x=chart_data.index, y='total_value_twd', title="淨值走勢")
-                    
-                    # [修正一] 更新X軸，以「週」為單位顯示刻度，並旋轉標籤
-                    fig.update_xaxes(
-                        dtick="W1", # W1 代表每週顯示一個刻度
-                        tickformat="%Y-%m-%d", # 日期格式
-                        tickangle=-45 # 標籤旋轉45度，避免重疊
-                    )
-                    
-                    # [修正二] 更新佈局，禁用所有鼠標拖曳/縮放功能
-                    fig.update_layout(
-                        dragmode=False,
-                        xaxis=dict(fixedrange=True),
-                        yaxis=dict(fixedrange=True)
-                    )
-
-                    # [修正三] Plotly 會自動處理正負值，確保縱軸正確
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("所選時間範圍內沒有歷史數據。")
-            else:
-                st.info("歷史淨值數據正在收集中，請於明日後查看。") 
-            st.markdown("---")
 
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit = df[df['doc_id'] == st.session_state['editing_asset_id']].iloc[0]
                 with st.form("edit_asset_form"):
                     st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱', asset_to_edit['代號'])}")
                     
-
                     asset_types = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
                     try:
                         current_type_index = asset_types.index(asset_to_edit.get('類型', '其他'))
                     except ValueError:
-                        current_type_index = 5 # 如果找不到（例如是舊的"股票")，預設為 "其他"
-
+                        current_type_index = 5
+                    
                     new_type = st.selectbox("類型", asset_types, index=current_type_index)
-
+                    
                     symbol_to_display = asset_to_edit.get('代號', '')
-                    if new_type == '台股' and symbol_to_display.upper().endswith('.TW'):
-                        symbol_to_display = symbol_to_display.upper().replace('.TW', '')
-                    new_symbol = st.text_input("代號", value=symbol_to_display)  
-
+                    if asset_to_edit.get('類型') == '台股' and symbol_to_display.upper().endswith(('.TW', '.TWO')):
+                        symbol_to_display = symbol_to_display.split('.')[0]
+                    
+                    new_symbol = st.text_input("代號", value=symbol_to_display, help="台股無需加 .TW 後綴")
                     new_quantity = st.number_input("持有數量", 0.0, format="%.4f", value=asset_to_edit['數量'])
                     new_cost_basis = st.number_input("平均成本", 0.0, format="%.4f", value=asset_to_edit['成本價'])
                     new_name = st.text_input("自訂名稱(可選)", value=asset_to_edit.get('名稱', ''))
                     
                     if st.form_submit_button("儲存變更"):
-                        final_symbol = new_symbol
-                        if new_type == "台股" and not new_symbol.upper().endswith(".TW"):
-                            final_symbol = f"{new_symbol}.TW"                        
+                        final_symbol = new_symbol.strip()
+                        if new_type == "台股" and not final_symbol.upper().endswith((".TW", ".TWO")):
+                            final_symbol = f"{final_symbol}.TW"
+                            
+                        # --- [v3.1.4 重大修正] ---
+                        # 將代號也加入更新字典中
                         update_data = {
                             "類型": new_type,
+                            "代號": final_symbol,
                             "數量": float(new_quantity),
                             "成本價": float(new_cost_basis),
                             "名稱": new_name
@@ -405,6 +377,7 @@ if 'user_id' in st.session_state:
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update(update_data)
                         st.success("資產已成功更新！")
                         del st.session_state['editing_asset_id']
+                        # 強制清除所有數據快取，確保刷新後能讀取最新數據
                         st.cache_data.clear()
                         st.rerun()
 
@@ -419,9 +392,8 @@ if 'user_id' in st.session_state:
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
 
-
+            
             defined_categories = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
-            # 只顯示用戶實際擁有的資產類別，並依照我們定義的順序排列
             existing_categories_in_order = [cat for cat in defined_categories if cat in df['分類'].unique()]
             
             if existing_categories_in_order:
@@ -443,13 +415,10 @@ if 'user_id' in st.session_state:
                         headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
                         for col, header in zip(header_cols, headers):
                             col.markdown(f"**{header}**")
-                        st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
+                        st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)                        
 
                         for _, row in category_df.iterrows():
                             doc_id = row.get('doc_id')
-                            #cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
-                            cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
-
                             with cols[0]:
                                 # [v3.1.3] 顯示時，移除台股的 .TW 後綴
                                 display_symbol = row.get('代號', '')
@@ -475,7 +444,7 @@ if 'user_id' in st.session_state:
                             with cols[5]:
                                 st.write(f"{row.get('市值', 0):,.2f}")
                             
-                            # 操作按鈕
+                            # [v3.1.4 修正] 操作按鈕
                             with cols[6]:
                                 btn_cols = st.columns([1,1])
                                 if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯"):
@@ -484,6 +453,7 @@ if 'user_id' in st.session_state:
                                 if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
                                     db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
                                     st.success(f"資產 {row['代號']} 已刪除！")
+                                    # 強制清除所有數據快取
                                     st.cache_data.clear()
                                     st.rerun()
                             
