@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.2 - 資產分類最終版
+#  版本：v3.1.3 - 台股體驗優化版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.2"
+APP_VERSION = "v3.1.3"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -374,7 +374,7 @@ if 'user_id' in st.session_state:
                 with st.form("edit_asset_form"):
                     st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱', asset_to_edit['代號'])}")
                     
-                    # --- [v3.1.1 重大修改] ---
+
                     asset_types = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
                     try:
                         current_type_index = asset_types.index(asset_to_edit.get('類型', '其他'))
@@ -382,11 +382,20 @@ if 'user_id' in st.session_state:
                         current_type_index = 5 # 如果找不到（例如是舊的"股票")，預設為 "其他"
 
                     new_type = st.selectbox("類型", asset_types, index=current_type_index)
+
+                    symbol_to_display = asset_to_edit.get('代號', '')
+                    if new_type == '台股' and symbol_to_display.upper().endswith('.TW'):
+                        symbol_to_display = symbol_to_display.upper().replace('.TW', '')
+                    new_symbol = st.text_input("代號", value=symbol_to_display)  
+
                     new_quantity = st.number_input("持有數量", 0.0, format="%.4f", value=asset_to_edit['數量'])
                     new_cost_basis = st.number_input("平均成本", 0.0, format="%.4f", value=asset_to_edit['成本價'])
                     new_name = st.text_input("自訂名稱(可選)", value=asset_to_edit.get('名稱', ''))
                     
                     if st.form_submit_button("儲存變更"):
+                        final_symbol = new_symbol
+                        if new_type == "台股" and not new_symbol.upper().endswith(".TW"):
+                            final_symbol = f"{new_symbol}.TW"                        
                         update_data = {
                             "類型": new_type,
                             "數量": float(new_quantity),
@@ -410,7 +419,7 @@ if 'user_id' in st.session_state:
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
 
-            # [v3.1.1 修正] 固定頁籤順序
+
             defined_categories = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
             # 只顯示用戶實際擁有的資產類別，並依照我們定義的順序排列
             existing_categories_in_order = [cat for cat in defined_categories if cat in df['分類'].unique()]
@@ -442,6 +451,10 @@ if 'user_id' in st.session_state:
                             cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
 
                             with cols[0]:
+                                # [v3.1.3] 顯示時，移除台股的 .TW 後綴
+                                display_symbol = row.get('代號', '')
+                                if row.get('類型') == '台股' and display_symbol.upper().endswith('.TW'):
+                                    display_symbol = display_symbol.upper().replace('.TW', '')                                
                                 st.markdown(f"**{row.get('代號', '')}**")
                                 st.caption(row.get('名稱') or row.get('類型', ''))
                             
@@ -451,7 +464,6 @@ if 'user_id' in st.session_state:
                             with cols[2]:
                                 st.write(f"{row.get('Price', 0):,.2f}")
 
-                            # [v2.9.2] 今日漲跌獨立欄位
                             with cols[3]:
                                 st.metric(label="", value="", 
                                           delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
