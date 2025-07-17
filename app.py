@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.6 - 智慧報價引擎版
+#  版本：v3.1.7 - 智慧報價引擎版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.6"
+APP_VERSION = "v3.1.7"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
