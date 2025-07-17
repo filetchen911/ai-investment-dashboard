@@ -62,11 +62,12 @@ def get_price(symbol, asset_type, currency="USD"):
         asset_type_lower = asset_type.lower()
         
         # [v3.1.6] 智慧報價引擎邏輯
-        symbols_to_try = [symbol.strip()]
+        symbols_to_try = [symbol.strip().upper()]
+        # [v3.1.6 修正] 不再使用 isdigit()，只要是台股/債券就嘗試
         if asset_type_lower in ["台股", "債券"]:
-            # 如果用戶輸入的是純數字，則建立一個嘗試列表
-            if symbol.strip().isdigit():
-                symbols_to_try = [f"{symbol.strip()}.TW", f"{symbol.strip()}.TWO"]
+            clean_symbol = symbol.strip().upper()
+            if not (clean_symbol.endswith(".TW") or clean_symbol.endswith(".TWO")):
+                symbols_to_try = [f"{clean_symbol}.TW", f"{clean_symbol}.TWO"]
 
         logging.error(f"  [DEBUG] 準備嘗試的代號列表: {symbols_to_try}")
         # 遍歷嘗試列表
