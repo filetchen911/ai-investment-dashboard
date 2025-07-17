@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.1 - 資產編輯優化版
+#  版本：v3.1.2 - 資產分類最終版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.1"
+APP_VERSION = "v3.1.2"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -312,7 +312,6 @@ if 'user_id' in st.session_state:
 
             if total_value_twd > 0:
                 st.subheader("資產配置比例")
-                st.subheader("資產配置比例")
                 allocation_by_class = df.groupby('分類')['市值_TWD'].sum().reset_index()
                 allocation_by_currency = df.groupby('幣別')['市值_TWD'].sum().reset_index()
                 chart_col1, chart_col2 = st.columns(2)
@@ -378,9 +377,9 @@ if 'user_id' in st.session_state:
                     # --- [v3.1.1 重大修改] ---
                     asset_types = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
                     try:
-                        current_type_index = asset_types.index(asset_to_edit['類型'])
+                        current_type_index = asset_types.index(asset_to_edit.get('類型', '其他'))
                     except ValueError:
-                        current_type_index = 0
+                        current_type_index = 5 # 如果找不到（例如是舊的"股票")，預設為 "其他"
 
                     new_type = st.selectbox("類型", asset_types, index=current_type_index)
                     new_quantity = st.number_input("持有數量", 0.0, format="%.4f", value=asset_to_edit['數量'])
@@ -410,79 +409,83 @@ if 'user_id' in st.session_state:
                     last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
+
+            # [v3.1.1 修正] 固定頁籤順序
+            defined_categories = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
+            # 只顯示用戶實際擁有的資產類別，並依照我們定義的順序排列
+            existing_categories_in_order = [cat for cat in defined_categories if cat in df['分類'].unique()]
             
-            categories = sorted(df['分類'].unique().tolist())
-            asset_tabs=st.tabs(categories)
-            
-            for i, category in enumerate(categories):
-                with asset_tabs[i]:
-                    category_df=df[df['分類']==category]                    
-                    cat_value_twd = category_df['市值_TWD'].sum()
-                    cat_cost_twd = category_df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
-                    cat_pnl_twd = cat_value_twd - cat_cost_twd
-                    cat_pnl_ratio = (cat_pnl_twd / cat_cost_twd * 100) if cat_cost_twd != 0 else 0
-                    c1,c2=st.columns(2)
-                    c1.metric(f"{category} 市值 (約 TWD)",f"${cat_value_twd:,.0f}")
-                    c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
-                    st.markdown("---")
+            if existing_categories_in_order:
+                asset_tabs=st.tabs(existing_categories_in_order)
+                for i, category in enumerate(existing_categories_in_order):
+                    with asset_tabs[i]:
+                        category_df=df[df['分類']==category]                  
+                        cat_value_twd = category_df['市值_TWD'].sum()
+                        cat_cost_twd = category_df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
+                        cat_pnl_twd = cat_value_twd - cat_cost_twd
+                        cat_pnl_ratio = (cat_pnl_twd / cat_cost_twd * 100) if cat_cost_twd != 0 else 0
+                        c1,c2=st.columns(2)
+                        c1.metric(f"{category} 市值 (約 TWD)",f"${cat_value_twd:,.0f}")
+                        c2.metric(f"{category} 損益 (約 TWD)",f"${cat_pnl_twd:,.0f}",f"{cat_pnl_ratio:.2f}%")
+                        st.markdown("---")
 
-                    #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
-                    header_cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
-                    headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
-                    for col, header in zip(header_cols, headers):
-                        col.markdown(f"**{header}**")
-                    st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
+                        #header_cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                        header_cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
+                        headers = ["持倉", "數量", "現價", "今日漲跌", "成本", "市值", ""]
+                        for col, header in zip(header_cols, headers):
+                            col.markdown(f"**{header}**")
+                        st.markdown('<hr style="margin-top:0; margin-bottom:0.5rem; opacity: 0.3;">', unsafe_allow_html=True)
 
-                    for _, row in category_df.iterrows():
-                        doc_id = row.get('doc_id')
-                        #cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
-                        cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
+                        for _, row in category_df.iterrows():
+                            doc_id = row.get('doc_id')
+                            #cols = st.columns([3, 1.5, 2, 2, 1.5, 1.5, 1.5])
+                            cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
 
-                        with cols[0]:
-                            st.markdown(f"**{row.get('代號', '')}**")
-                            st.caption(row.get('名稱') or row.get('類型', ''))
-                        
-                        with cols[1]:
-                            st.write(f"{row.get('數量', 0):.4f}")
-                        
-                        with cols[2]:
-                            st.write(f"{row.get('Price', 0):,.2f}")
-
-                        # [v2.9.2] 今日漲跌獨立欄位
-                        with cols[3]:
-                            st.metric(label="", value="", 
-                                      delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
-                                      label_visibility="collapsed")
-
-                        with cols[4]:
-                            st.write(f"{row.get('成本價', 0):,.2f}")
-                        
-                        with cols[5]:
-                            st.write(f"{row.get('市值', 0):,.2f}")
-                        
-                        # 操作按鈕
-                        with cols[6]:
-                            btn_cols = st.columns([1,1])
-                            if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯"):
-                                st.session_state['editing_asset_id'] = doc_id
-                                st.rerun()
-                            if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
-                                db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
-                                st.success(f"資產 {row['代號']} 已刪除！")
-                                st.cache_data.clear()
-                                st.rerun()
-                        
-                        with st.expander("查看詳細分析"):
-                            pnl = row.get('損益', 0)
-                            pnl_ratio = row.get('損益比', 0)
-                            today_pnl = row.get('今日總損益', 0)
-                            asset_weight = (row.get('市值_TWD', 0) / total_value_twd * 100) if total_value_twd > 0 else 0
+                            with cols[0]:
+                                st.markdown(f"**{row.get('代號', '')}**")
+                                st.caption(row.get('名稱') or row.get('類型', ''))
                             
-                            expander_cols = st.columns(3)
-                            expander_cols[0].metric(label="今日總損益", value=f"{today_pnl:,.2f} {row.get('幣別','')}")
-                            expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
-                            expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
-                        st.divider()
+                            with cols[1]:
+                                st.write(f"{row.get('數量', 0):.4f}")
+                            
+                            with cols[2]:
+                                st.write(f"{row.get('Price', 0):,.2f}")
+
+                            # [v2.9.2] 今日漲跌獨立欄位
+                            with cols[3]:
+                                st.metric(label="", value="", 
+                                          delta=f"{row.get('今日漲跌', 0):,.2f} ({row.get('今日漲跌幅', 0):.2f}%)",
+                                          label_visibility="collapsed")
+
+                            with cols[4]:
+                                st.write(f"{row.get('成本價', 0):,.2f}")
+                            
+                            with cols[5]:
+                                st.write(f"{row.get('市值', 0):,.2f}")
+                            
+                            # 操作按鈕
+                            with cols[6]:
+                                btn_cols = st.columns([1,1])
+                                if btn_cols[0].button("✏️", key=f"edit_{doc_id}", help="編輯"):
+                                    st.session_state['editing_asset_id'] = doc_id
+                                    st.rerun()
+                                if btn_cols[1].button("🗑️", key=f"delete_{doc_id}", help="刪除"):
+                                    db.collection('users').document(user_id).collection('assets').document(doc_id).delete()
+                                    st.success(f"資產 {row['代號']} 已刪除！")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                            
+                            with st.expander("查看詳細分析"):
+                                pnl = row.get('損益', 0)
+                                pnl_ratio = row.get('損益比', 0)
+                                today_pnl = row.get('今日總損益', 0)
+                                asset_weight = (row.get('市值_TWD', 0) / total_value_twd * 100) if total_value_twd > 0 else 0
+                                
+                                expander_cols = st.columns(3)
+                                expander_cols[0].metric(label="今日總損益", value=f"{today_pnl:,.2f} {row.get('幣別','')}")
+                                expander_cols[1].metric(label="累計總損益", value=f"{pnl:,.2f}", delta=f"{pnl_ratio:.2f}%")
+                                expander_cols[2].metric(label="佔總資產比例", value=f"{asset_weight:.2f}%")
+                            st.divider()
 
     elif page == "AI 新聞精選":
         st.header("💡 AI 每日市場洞察")
