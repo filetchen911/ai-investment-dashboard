@@ -59,9 +59,11 @@ def get_price(symbol, asset_type, currency="USD"):
             if symbol.strip().isdigit():
                 symbols_to_try = [f"{symbol.strip()}.TW", f"{symbol.strip()}.TWO"]
 
+        print(f"  [DEBUG] 準備嘗試的代號列表: {symbols_to_try}")
         # 遍歷嘗試列表
         for s in symbols_to_try:
             try:
+                print(f"    [DEBUG] --- 正在嘗試代號: {s} ---")
                 if asset_type_lower == "現金":
                      return {"price": 1.0, "previous_close": 1.0}
                 
@@ -69,6 +71,7 @@ def get_price(symbol, asset_type, currency="USD"):
                     ticker = yf.Ticker(s)
                     hist = ticker.history(period="2d")
                     if not hist.empty:
+                        print(f"      [DEBUG] yfinance 成功返回 {len(hist)} 筆數據。")
                         price_data["price"] = hist['Close'].iloc[-1]
                         price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
                         return price_data # 成功抓到就返回，不再嘗試
@@ -87,8 +90,10 @@ def get_price(symbol, asset_type, currency="USD"):
                 continue
 
     except Exception as e:
+        print(f"[DEBUG] get_price 函數發生未知錯誤: {e}")
         print(f"獲取 {symbol} 報價時出錯: {e}")
         
+    print(f"  [DEBUG] 完成所有嘗試，最終返回: {price_data if price_data.get('price') is not None else None}")
     return price_data if price_data.get("price") is not None else None
 
 
