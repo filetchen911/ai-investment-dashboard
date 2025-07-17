@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.6 - 台股體驗優化版
+#  版本：v3.1.6 - 智慧報價引擎版
 # ========================================================
 
 
@@ -51,24 +51,46 @@ def get_price(symbol, asset_type, currency="USD"):
     price_data = {"price": None, "previous_close": None}
     try:
         asset_type_lower = asset_type.lower()
-        if asset_type_lower == "現金":
-             return {"price": 1.0, "previous_close": 1.0}
-        if asset_type_lower in ["美股", "台股", "債券", "其他", "股票", "etf"]:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="2d")
-            if not hist.empty:
-                price_data["price"] = hist['Close'].iloc[-1]
-                price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
-        elif asset_type_lower == "加密貨幣":
-            coin_id = symbol.lower()
-            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
-            response = requests.get(url).json()
-            if coin_id in response and currency.lower() in response[coin_id]:
-                price = response[coin_id][currency.lower()]
-                price_data = {"price": price, "previous_close": price}
+        
+        # [v3.1.6] 智慧報價引擎邏輯
+        symbols_to_try = [symbol.strip()]
+        if asset_type_lower in ["台股", "債券"]:
+            # 如果用戶輸入的是純數字，則建立一個嘗試列表
+            if symbol.strip().isdigit():
+                symbols_to_try = [f"{symbol.strip()}.TW", f"{symbol.strip()}.TWO"]
+
+        # 遍歷嘗試列表
+        for s in symbols_to_try:
+            try:
+                if asset_type_lower == "現金":
+                     return {"price": 1.0, "previous_close": 1.0}
+                
+                if asset_type_lower in ["美股", "台股", "債券", "其他", "股票", "etf"]:
+                    ticker = yf.Ticker(s)
+                    hist = ticker.history(period="2d")
+                    if not hist.empty:
+                        price_data["price"] = hist['Close'].iloc[-1]
+                        price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
+                        return price_data # 成功抓到就返回，不再嘗試
+                
+                elif asset_type_lower == "加密貨幣":
+                    coin_id = s.lower()
+                    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
+                    response = requests.get(url).json()
+                    if coin_id in response and currency.lower() in response[coin_id]:
+                        price = response[coin_id][currency.lower()]
+                        price_data = {"price": price, "previous_close": price}
+                        return price_data
+            except Exception:
+                # 如果用某個後綴失敗了，繼續嘗試下一個
+                print(f"嘗試使用 {s} 抓取 {symbol} 失敗，繼續嘗試下一個...")
+                continue
+
     except Exception as e:
         print(f"獲取 {symbol} 報價時出錯: {e}")
-    return price_data
+        
+    return price_data if price_data.get("price") is not None else None
+
 
 def update_quotes_manually():
     db_client = firestore.client()
@@ -89,6 +111,7 @@ def update_quotes_manually():
     for i, (symbol, asset_type, currency) in enumerate(symbols_to_fetch):
         price_data = get_price(symbol, asset_type, currency)
         if price_data and price_data.get("price") is not None:
+            # 儲存到 Firestore 的 Symbol 仍然是乾淨的代號
             quotes_batch.set(quotes_ref.document(symbol), {
                 "Symbol": symbol,
                 "Price": round(float(price_data['price']), 4),
@@ -251,17 +274,14 @@ if 'user_id' in st.session_state:
             with st.form("add_asset_form", clear_on_submit=True):
                 c1,c2,c3=st.columns(3)
                 asset_type = c1.selectbox("類型", ["美股", "台股", "債券", "加密貨幣", "現金", "其他"])
-                symbol_input = c1.text_input("代號", help="台股無需加 .TW 後綴")
+                symbol_input = c1.text_input("代號", help="台股或台灣上市債券ETF無需加後綴")
                 quantity,cost_basis=c2.number_input("持有數量",0.0,format="%.4f"),c2.number_input("平均成本",0.0,format="%.4f")
                 currency,name=c3.selectbox("幣別",["USD","TWD","USDT"]),c3.text_input("自訂名稱(可選)")
                 if st.form_submit_button("確定新增"):
                     if symbol_input and quantity>0 and cost_basis>0:
-                        final_symbol = symbol_input.strip()
-                        if asset_type in ["台股", "債券"] and not final_symbol.upper().endswith((".TW", ".TWO")):
-                            final_symbol = f"{final_symbol}.TW"
-                        
+                        # [v3.1.6] 直接儲存用戶輸入的乾淨代號
                         db.collection('users').document(user_id).collection('assets').add({
-                            "類型":asset_type, "代號":final_symbol, "名稱":name, 
+                            "類型":asset_type, "代號":symbol_input.strip().upper(), "名稱":name, 
                             "數量":float(quantity), "成本價":float(cost_basis), 
                             "幣別":currency, "建立時間":firestore.SERVER_TIMESTAMP
                         })
@@ -337,7 +357,6 @@ if 'user_id' in st.session_state:
             historical_df = load_historical_value(user_id)
             historical_df = load_historical_value(user_id)
 
-
             if 'editing_asset_id' in st.session_state:
                 asset_to_edit = df[df['doc_id'] == st.session_state['editing_asset_id']].iloc[0]
                 with st.form("edit_asset_form"):
@@ -350,26 +369,16 @@ if 'user_id' in st.session_state:
                         current_type_index = 5
                     
                     new_type = st.selectbox("類型", asset_types, index=current_type_index)
-                    
-                    symbol_to_display = asset_to_edit.get('代號', '')
-                    if asset_to_edit.get('類型') == '台股' and symbol_to_display.upper().endswith(('.TW', '.TWO')):
-                        symbol_to_display = symbol_to_display.split('.')[0]
-                    
-                    new_symbol = st.text_input("代號", value=symbol_to_display, help="台股無需加 .TW 後綴")
+                    new_symbol = st.text_input("代號", value=asset_to_edit.get('代號', ''), help="台股或台灣上市債券ETF無需加後綴")
                     new_quantity = st.number_input("持有數量", 0.0, format="%.4f", value=asset_to_edit['數量'])
                     new_cost_basis = st.number_input("平均成本", 0.0, format="%.4f", value=asset_to_edit['成本價'])
                     new_name = st.text_input("自訂名稱(可選)", value=asset_to_edit.get('名稱', ''))
                     
                     if st.form_submit_button("儲存變更"):
-                        final_symbol = new_symbol.strip()
-                        if new_type == "台股" and not final_symbol.upper().endswith((".TW", ".TWO")):
-                            final_symbol = f"{final_symbol}.TW"
-                            
-                        # --- [v3.1.4 重大修正] ---
-                        # 將代號也加入更新字典中
+                        # [v3.1.6] 直接儲存用戶輸入的乾淨代號
                         update_data = {
                             "類型": new_type,
-                            "代號": final_symbol,
+                            "代號": new_symbol.strip().upper(),
                             "數量": float(new_quantity),
                             "成本價": float(new_cost_basis),
                             "名稱": new_name
@@ -377,7 +386,6 @@ if 'user_id' in st.session_state:
                         db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update(update_data)
                         st.success("資產已成功更新！")
                         del st.session_state['editing_asset_id']
-                        # 強制清除所有數據快取，確保刷新後能讀取最新數據
                         st.cache_data.clear()
                         st.rerun()
 
