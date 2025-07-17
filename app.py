@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.4 - 編輯與刪除功能最終修正版
+#  版本：v3.1.5 - 編輯與刪除功能最終修正版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.4"
+APP_VERSION = "v3.1.5"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -420,13 +420,14 @@ if 'user_id' in st.session_state:
                             doc_id = row.get('doc_id')
                             cols = st.columns([2, 1.5, 1.8, 2, 1.5, 1.5, 1.5])
                             with cols[0]:
-                                # [v3.1.3] 顯示時，移除台股的 .TW 後綴
+                                # 顯示時，移除台股的 .TW 或 .TWO 後綴
                                 display_symbol = row.get('代號', '')
-                                if row.get('類型') == '台股' and display_symbol.upper().endswith('.TW'):
-                                    display_symbol = display_symbol.upper().replace('.TW', '')                                
-                                st.markdown(f"**{row.get('代號', '')}**")
+                                if row.get('類型') == '台股' and (display_symbol.upper().endswith('.TW') or display_symbol.upper().endswith('.TWO')):
+                                    display_symbol = display_symbol.split('.')[0]
+                                st.markdown(f"**{display_symbol}**") # <-- 使用處理過的變數
                                 st.caption(row.get('名稱') or row.get('類型', ''))
-                            
+
+
                             with cols[1]:
                                 st.write(f"{row.get('數量', 0):.4f}")
                             
