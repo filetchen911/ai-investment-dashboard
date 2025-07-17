@@ -2,7 +2,7 @@
 
 # ========================================================
 #  個人 AI 投資決策儀表板 - Streamlit App
-#  版本：v3.1.0 - 資產分類重構版
+#  版本：v3.1.1 - 資產編輯優化版
 # ========================================================
 
 
@@ -19,7 +19,7 @@ from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
 
-APP_VERSION = "v3.1.0"
+APP_VERSION = "v3.1.1"
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -50,19 +50,15 @@ except Exception as e:
 def get_price(symbol, asset_type, currency="USD"):
     price_data = {"price": None, "previous_close": None}
     try:
-        # [v3.1.0 修正] 根據新的資產類型抓取價格
         asset_type_lower = asset_type.lower()
-        
         if asset_type_lower == "現金":
              return {"price": 1.0, "previous_close": 1.0}
-
-        if asset_type_lower in ["美股", "台股", "債券", "其他"]:
+        if asset_type_lower in ["美股", "台股", "債券", "其他", "股票", "etf"]:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="2d")
             if not hist.empty:
                 price_data["price"] = hist['Close'].iloc[-1]
                 price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
-        
         elif asset_type_lower == "加密貨幣":
             coin_id = symbol.lower()
             url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
@@ -254,7 +250,6 @@ if 'user_id' in st.session_state:
         with st.expander("➕ 新增資產"):
             with st.form("add_asset_form", clear_on_submit=True):
                 c1,c2,c3=st.columns(3)
-                # [v3.1.0 修正] 更新資產類型選項
                 asset_type = c1.selectbox("類型", ["美股", "台股", "債券", "加密貨幣", "現金", "其他"])
                 symbol = c1.text_input("代號", help="例如: 美股-VOO, 台股-0050.TW, 債券-TLT, 加密貨幣-bitcoin, 現金-TWD")
                 quantity,cost_basis=c2.number_input("持有數量",0.0,format="%.4f"),c2.number_input("平均成本",0.0,format="%.4f")
@@ -297,7 +292,6 @@ if 'user_id' in st.session_state:
 
             df['市值_TWD'] = df.apply(lambda r: r['市值'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['市值'], axis=1)
             
-            # [v3.1.0 修正] 資產分類邏輯現在直接使用用戶選擇的類型
             df['分類'] = df['類型']
             
             total_value_twd = df['市值_TWD'].sum()
@@ -313,10 +307,11 @@ if 'user_id' in st.session_state:
             k1, k2, k3 = st.columns(3)
             k1.metric("總資產價值 (約 TWD)", f"${total_value_twd:,.0f}")
             k2.metric("總損益 (約 TWD)", f"${total_pnl_twd:,.0f}", f"{total_pnl_ratio:.2f}%")
-            k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")
+            k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")            
             st.markdown("---")
 
             if total_value_twd > 0:
+                st.subheader("資產配置比例")
                 st.subheader("資產配置比例")
                 allocation_by_class = df.groupby('分類')['市值_TWD'].sum().reset_index()
                 allocation_by_currency = df.groupby('幣別')['市值_TWD'].sum().reset_index()
@@ -372,19 +367,39 @@ if 'user_id' in st.session_state:
                 else:
                     st.info("所選時間範圍內沒有歷史數據。")
             else:
-                st.info("歷史淨值數據正在收集中，請於明日後查看。")            
+                st.info("歷史淨值數據正在收集中，請於明日後查看。") 
             st.markdown("---")
 
             if 'editing_asset_id' in st.session_state:
-                asset_to_edit=df[df['doc_id']==st.session_state['editing_asset_id']].iloc[0]
+                asset_to_edit = df[df['doc_id'] == st.session_state['editing_asset_id']].iloc[0]
                 with st.form("edit_asset_form"):
-                    st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱',asset_to_edit['代號'])}")
-                    q,c,n=st.number_input("持有數量",0.0,format="%.4f",value=asset_to_edit['數量']),st.number_input("平均成本",0.0,format="%.4f",value=asset_to_edit['成本價']),st.text_input("自訂名稱(可選)",value=asset_to_edit.get('名稱',''))
-                    if st.form_submit_button("儲存變更"):
-                        db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update({"數量":float(q),"成本價":float(c),"名稱":n})
-                        st.success("資產已成功更新！");del st.session_state['editing_asset_id'];st.cache_data.clear();st.rerun()
+                    st.subheader(f"✏️ 正在編輯資產: {asset_to_edit.get('名稱', asset_to_edit['代號'])}")
+                    
+                    # --- [v3.1.1 重大修改] ---
+                    asset_types = ["美股", "台股", "債券", "加密貨幣", "現金", "其他"]
+                    try:
+                        current_type_index = asset_types.index(asset_to_edit['類型'])
+                    except ValueError:
+                        current_type_index = 0
 
-            
+                    new_type = st.selectbox("類型", asset_types, index=current_type_index)
+                    new_quantity = st.number_input("持有數量", 0.0, format="%.4f", value=asset_to_edit['數量'])
+                    new_cost_basis = st.number_input("平均成本", 0.0, format="%.4f", value=asset_to_edit['成本價'])
+                    new_name = st.text_input("自訂名稱(可選)", value=asset_to_edit.get('名稱', ''))
+                    
+                    if st.form_submit_button("儲存變更"):
+                        update_data = {
+                            "類型": new_type,
+                            "數量": float(new_quantity),
+                            "成本價": float(new_cost_basis),
+                            "名稱": new_name
+                        }
+                        db.collection('users').document(user_id).collection('assets').document(st.session_state['editing_asset_id']).update(update_data)
+                        st.success("資產已成功更新！")
+                        del st.session_state['editing_asset_id']
+                        st.cache_data.clear()
+                        st.rerun()
+
             col_title, col_time = st.columns([3, 1])
             with col_title:
                 st.subheader("我的投資組合")
@@ -396,13 +411,12 @@ if 'user_id' in st.session_state:
                     formatted_time = last_updated_taipei.strftime('%y-%m-%d %H:%M')
                     st.markdown(f"<p style='text-align: right; color: #888; font-size: 0.9em;'>更新於: {formatted_time}</p>", unsafe_allow_html=True)
             
-            # [v3.1.0 修正] 分類頁籤現在直接使用新的分類
-            categories = df['分類'].unique().tolist()
+            categories = sorted(df['分類'].unique().tolist())
             asset_tabs=st.tabs(categories)
             
             for i, category in enumerate(categories):
                 with asset_tabs[i]:
-                    category_df=df[df['分類']==category]
+                    category_df=df[df['分類']==category]                    
                     cat_value_twd = category_df['市值_TWD'].sum()
                     cat_cost_twd = category_df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
                     cat_pnl_twd = cat_value_twd - cat_cost_twd
