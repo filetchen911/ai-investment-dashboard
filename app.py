@@ -18,8 +18,17 @@ import firebase_admin
 from firebase_admin import credentials, auth, firestore
 import plotly.express as px
 import numpy as np
+import logging # <-- [新] 導入 logging
+import sys     # <-- [新] 導入 sys
 
 APP_VERSION = "v3.1.7"
+
+# 將日誌輸出到標準輸出流，並設定格式與級別
+logging.basicConfig(
+    stream=sys.stdout, 
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # --- 從 Streamlit Secrets 讀取並重組金鑰 ---
 try:
@@ -59,11 +68,11 @@ def get_price(symbol, asset_type, currency="USD"):
             if symbol.strip().isdigit():
                 symbols_to_try = [f"{symbol.strip()}.TW", f"{symbol.strip()}.TWO"]
 
-        print(f"  [DEBUG] 準備嘗試的代號列表: {symbols_to_try}")
+        logging.error(f"  [DEBUG] 準備嘗試的代號列表: {symbols_to_try}")
         # 遍歷嘗試列表
         for s in symbols_to_try:
             try:
-                print(f"    [DEBUG] --- 正在嘗試代號: {s} ---")
+                logging.error(f"    [DEBUG] --- 正在嘗試代號: {s} ---")
                 if asset_type_lower == "現金":
                      return {"price": 1.0, "previous_close": 1.0}
                 
@@ -71,7 +80,7 @@ def get_price(symbol, asset_type, currency="USD"):
                     ticker = yf.Ticker(s)
                     hist = ticker.history(period="2d")
                     if not hist.empty:
-                        print(f"      [DEBUG] yfinance 成功返回 {len(hist)} 筆數據。")
+                        logging.error(f"      [DEBUG] yfinance 成功返回 {len(hist)} 筆數據。")
                         price_data["price"] = hist['Close'].iloc[-1]
                         price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
                         return price_data # 成功抓到就返回，不再嘗試
@@ -86,14 +95,14 @@ def get_price(symbol, asset_type, currency="USD"):
                         return price_data
             except Exception:
                 # 如果用某個後綴失敗了，繼續嘗試下一個
-                print(f"嘗試使用 {s} 抓取 {symbol} 失敗，繼續嘗試下一個...")
+                logging.error(f"嘗試使用 {s} 抓取 {symbol} 失敗，繼續嘗試下一個...")
                 continue
 
     except Exception as e:
-        print(f"[DEBUG] get_price 函數發生未知錯誤: {e}")
+        logging.error(f"獲取 {symbol} ({asset_type}) 報價時出錯: {e}")
         print(f"獲取 {symbol} 報價時出錯: {e}")
         
-    print(f"  [DEBUG] 完成所有嘗試，最終返回: {price_data if price_data.get('price') is not None else None}")
+    logging.error(f"  [DEBUG] 完成所有嘗試，最終返回: {price_data if price_data.get('price') is not None else None}")
     return price_data if price_data.get("price") is not None else None
 
 
