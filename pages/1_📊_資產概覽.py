@@ -113,6 +113,38 @@ else:
 
     st.subheader("歷史淨值趨勢 (TWD)")
     historical_df = load_historical_value(user_id)
+    
+    if not historical_df.empty:
+        time_range_options = ["最近30天", "最近90天", "今年以來", "所有時間"]
+        time_range = st.radio("選擇時間範圍", time_range_options, horizontal=True)
+
+        today = pd.to_datetime(datetime.date.today())
+        if time_range == "最近30天":
+            chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=30))]
+        elif time_range == "最近90天":
+            chart_data = historical_df[historical_df.index >= (today - pd.DateOffset(days=90))]
+        elif time_range == "今年以來":
+            chart_data = historical_df[historical_df.index.year == today.year]
+        else:
+            chart_data = historical_df
+
+        if not chart_data.empty:
+            fig = px.line(chart_data, x=chart_data.index, y='total_value_twd', title="淨值走勢")
+            fig.update_xaxes(
+                dtick="W1", 
+                tickformat="%Y-%m-%d",
+                tickangle=-45
+            )
+            fig.update_layout(
+                dragmode=False,
+                xaxis=dict(fixedrange=True),
+                yaxis=dict(fixedrange=True)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("所選時間範圍內沒有歷史數據。")
+    else:
+        st.info("歷史淨值數據正在收集中，請於明日後查看。") 
     st.markdown("---")
 
     if 'editing_asset_id' in st.session_state:
