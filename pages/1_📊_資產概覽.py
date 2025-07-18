@@ -9,7 +9,8 @@ from utils import (
     update_quotes_manually, 
     load_user_assets_from_firestore, 
     load_quotes_from_firestore, 
-    get_exchange_rate
+    get_exchange_rate,
+    load_historical_value
 )
 
 st.header("📊 資產概覽")
@@ -111,7 +112,6 @@ else:
     st.markdown("---")
 
     st.subheader("歷史淨值趨勢 (TWD)")
-    historical_df = load_historical_value(user_id)
     historical_df = load_historical_value(user_id)
     st.markdown("---")
 
