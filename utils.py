@@ -14,7 +14,7 @@ import numpy as np
 import logging
 import sys
 
-APP_VERSION = "v4.0.3 (PreviousClose 修正版)"
+APP_VERSION = "v4.0.3"
 
 # 設定日誌系統
 logging.basicConfig(
@@ -95,7 +95,13 @@ def get_price(symbol, asset_type, currency="USD"):
                         return price_data
                 
                 elif asset_type_lower == "加密貨幣":
-                    # ... (加密貨幣邏輯不變)
+                    coin_id = s.lower()
+                    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
+                    response = requests.get(url).json()
+                    if coin_id in response and currency.lower() in response[coin_id]:
+                        price = response[coin_id][currency.lower()]
+                        price_data = {"price": price, "previous_close": price}
+                        return price_data
             except Exception:
                 logging.info(f"    嘗試 {s} 失敗，繼續...")
                 continue
