@@ -14,7 +14,7 @@ import numpy as np
 import logging
 import sys
 
-APP_VERSION = "v3.1.7 (多頁面版)"
+APP_VERSION = "v4.0.2 (圖表標籤優化)"
 
 # 設定日誌系統
 logging.basicConfig(
