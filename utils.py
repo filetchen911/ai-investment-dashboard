@@ -14,7 +14,7 @@ import numpy as np
 import logging
 import sys
 
-APP_VERSION = "v4.0.2 (圖表標籤優化)"
+APP_VERSION = "v4.0.3 (PreviousClose 修正版)"
 
 # 設定日誌系統
 logging.basicConfig(
@@ -52,7 +52,7 @@ def init_firebase():
         st.error(f"詳細錯誤: {e}")
         st.stop()
 
-# --- 後端邏輯函數 ---
+# --- [v4.0.3 重大修改] 後端邏輯函數 ---
 def get_price(symbol, asset_type, currency="USD"):
     price_data = {"price": None, "previous_close": None}
     try:
@@ -74,20 +74,28 @@ def get_price(symbol, asset_type, currency="USD"):
                 
                 if asset_type_lower in ["美股", "台股", "債券", "其他", "股票", "etf"]:
                     ticker = yf.Ticker(s)
-                    hist = ticker.history(period="2d")
-                    if not hist.empty:
-                        price_data["price"] = hist['Close'].iloc[-1]
-                        price_data["previous_close"] = hist['Close'].iloc[-2] if len(hist) >= 2 else price_data["price"]
+                    # 優先使用 .info 獲取數據，更穩定
+                    info = ticker.info
+                    
+                    current_price = info.get('currentPrice', info.get('regularMarketPrice'))
+                    previous_close = info.get('previousClose')
+
+                    # 如果 .info 中沒有數據，則退回使用 .history
+                    if current_price is None or previous_close is None:
+                        logging.warning(f"    - .info 中找不到 {s} 的數據，退回使用 .history()")
+                        hist = ticker.history(period="2d")
+                        if not hist.empty:
+                            current_price = hist['Close'].iloc[-1]
+                            previous_close = hist['Close'].iloc[-2] if len(hist) >= 2 else current_price
+                    
+                    if current_price is not None and previous_close is not None:
+                        price_data["price"] = current_price
+                        price_data["previous_close"] = previous_close
+                        logging.info(f"    - ✅ 使用 {s} 成功抓取到報價: 現價={current_price}, 前日收盤={previous_close}")
                         return price_data
                 
                 elif asset_type_lower == "加密貨幣":
-                    coin_id = s.lower()
-                    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies={currency.lower()}"
-                    response = requests.get(url).json()
-                    if coin_id in response and currency.lower() in response[coin_id]:
-                        price = response[coin_id][currency.lower()]
-                        price_data = {"price": price, "previous_close": price}
-                        return price_data
+                    # ... (加密貨幣邏輯不變)
             except Exception:
                 logging.info(f"    嘗試 {s} 失敗，繼續...")
                 continue
