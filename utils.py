@@ -243,13 +243,69 @@ def load_historical_value(user_id):
         return pd.DataFrame() 
     except Exception as e:
         st.error(f"讀取歷史淨值時發生錯誤: {e}")
-        return pd.DataFrame().
+        return pd.DataFrame()
 
 # --- [v4.1] 退休金計算引擎的包裝函數 ---
 def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
-    # ... (此包裝函數的內容維持不變，它會自動呼叫下方更新後的計算引擎) ...
+   """
+    接收前端傳來的參數字典，呼叫 RetirementCalculator 進行完整分析，
+    並將所有結果打包成一個字典回傳。
+    這是前端唯一需要呼叫的退休金計算函數。
+    """
     calculator = RetirementCalculator()
-    # ... (其餘邏輯不變) ...
+
+    # 從 user_inputs 解構參數
+    # 勞退參數
+    pension_params = {
+        'current_principal': user_inputs.get('current_pension_principal', 0),
+        'monthly_salary': user_inputs.get('avg_monthly_salary', 0),
+        'employer_rate': 6.0,  # 法定雇主提撥率
+        'employee_rate': user_inputs.get('self_contribution_rate', 0),
+        'years_to_retirement': user_inputs.get('years_to_retirement', 0),
+        'annual_return_rate': user_inputs.get('expected_return_rate', 4.0),
+        'retirement_age': user_inputs.get('retirement_age', 60),
+        'current_contributed_years': user_inputs.get('pension_contributed_years', 0),
+        'salary_growth_rate': user_inputs.get('salary_growth_rate', 2.0)
+    }
+
+    # 勞保參數
+    insurance_params = {
+        'avg_salary': user_inputs.get('avg_monthly_salary', 0),
+        'insurance_years': user_inputs.get('insurance_seniority', 0),
+        'claim_age': user_inputs.get('retirement_age', 60),
+        'birth_year': user_inputs.get('birth_year', 1990)
+    }
+
+    # 執行計算
+    labor_pension_result = calculator.calculate_labor_pension_accurate(**pension_params, verbose=False)
+    labor_insurance_result = calculator.calculate_labor_insurance_pension(**insurance_params, verbose=False)
+
+    # 整合結果用於替代率分析
+    total_monthly_pension = labor_pension_result.get('monthly_pension', 0) + labor_insurance_result.get('monthly_pension', 0)
+    replacement_ratio = (total_monthly_pension / user_inputs.get('avg_monthly_salary', 1)) * 100
+
+    replacement_ratio_result = calculator.calculate_replacement_ratio_suggestions(
+        replacement_ratio,
+        user_inputs.get('avg_monthly_salary', 0),
+        user_inputs.get('years_to_retirement', 0)
+    )
+
+    # 執行敏感度分析
+    sensitivity_result = calculator.sensitivity_analysis(base_params=pension_params, verbose=False)
+
+    # 將所有結果打包成一個清晰的字典
+    final_results = {
+        "labor_pension": labor_pension_result,
+        "labor_insurance": labor_insurance_result,
+        "summary": {
+            "total_monthly_pension": total_monthly_pension,
+            "replacement_ratio": replacement_ratio,
+            "analysis": replacement_ratio_result
+        },
+        "sensitivity_analysis": sensitivity_result,
+        "validation_errors": labor_pension_result.get('validation_errors', [])
+    }
+
     return final_results
 
 # --- [v4.1] 台灣退休金計算引擎 ---
