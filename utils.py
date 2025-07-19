@@ -1,7 +1,5 @@
 # utils.py
 
-import streamlit as st
-import pandas as pd
 import datetime
 import os
 import requests
@@ -18,7 +16,7 @@ import numpy_financial as npf
 from typing import Dict, List, Tuple, Optional
 # --- [v4.1 新增結束] ---
 
-APP_VERSION = "v4.1.0"
+APP_VERSION = "v4.3.0"
 
 # 設定日誌系統
 logging.basicConfig(
@@ -311,6 +309,7 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 
     return final_results
 
+# --- [v4.1 新增] 台灣退休金計算引擎 ---
 class RetirementCalculator:
     def __init__(self):
         self.max_labor_insurance_salary = 45800  # 2025年勞保投保薪資最高級距
@@ -549,53 +548,40 @@ class RetirementCalculator:
 
         return result
 
-    def calculate_labor_insurance_pension(self, avg_salary: float, insurance_years: int, 
-                                        claim_age: int, birth_year: int, verbose: bool = True) -> Dict:
+    # --- [v4.3.0 修改] ---
+    def calculate_labor_insurance_pension(self, avg_salary: float, insurance_years: int,
+                                          claim_age: int, birth_year: int, verbose: bool = True) -> Dict:
         """
-        勞保老年年金試算（修正版，符合實際法規）
-
-        Args:
-            avg_salary (float): 平均投保薪資（上限45800）
-            insurance_years (int): 勞保年資（需滿15年）
-            claim_age (int): 預計申請年齡
-            birth_year (int): 出生年，用於計算法定請領年齡
-            verbose (bool): 是否輸出詳細說明
-
-        Returns:
-            dict: 包含金額與適法性說明
+        勞保老年年金試算（v4.3.0 - 未來模擬版）
+        如果申請年齡不足，會自動以法定請領年齡為基準進行模擬計算。
         """
+        legal_age = self.legal_retirement_age(birth_year)
         result = {
-            'legal_age': self.legal_retirement_age(birth_year),
+            'legal_age': legal_age,
             'eligible': False,
             'monthly_pension': 0,
             'formula': '',
             'formula_a': 0,
             'formula_b': 0,
             'remark': '',
+            'is_projected_at_legal_age': False, # [v4.3 新增] 標記是否為模擬計算
             'early_retirement_penalty': 0,
             'delay_retirement_bonus': 0
         }
 
-        # 輸入驗證
         if avg_salary <= 0 or insurance_years < 0:
             result['remark'] = "❌ 輸入參數錯誤"
-            if verbose:
-                print(result['remark'])
             return result
-
-        if claim_age < result['legal_age']:
-            result['remark'] = f"⚠️ 申請年齡不足：目前 {claim_age} 歲，法定年齡 {result['legal_age']} 歲"
-            if verbose:
-                print(result['remark'])
-            return result
-
+        
         if insurance_years < 15:
             result['remark'] = f"❌ 年資不足：勞保年資為 {insurance_years} 年，需滿15年才可請領"
-            if verbose:
-                print(result['remark'])
             return result
 
-        # 套用投保薪資上限
+        # [v4.3 核心邏輯] 使用法定年齡作為計算基準
+        effective_claim_age = max(claim_age, legal_age)
+        if claim_age < legal_age:
+            result['is_projected_at_legal_age'] = True
+
         avg_salary = min(avg_salary, self.max_labor_insurance_salary)
         
         # 修正後的勞保年金公式計算
@@ -612,37 +598,21 @@ class RetirementCalculator:
         result['formula_a'] = formula_a
         result['formula_b'] = formula_b
         
-        # 擇優計算
         base_pension = max(formula_a, formula_b)
-        result['formula'] = 'A式' if formula_a >= formula_b else 'B式'
         
-        # 計算延後請領加計金額（每延後1年加計4%，最多20%）
-        delay_years = max(0, claim_age - result['legal_age'])
+        # [v4.3 修正] 以 effective_claim_age 計算延後加給
+        delay_years = max(0, effective_claim_age - legal_age)
         if delay_years > 0:
-            delay_rate = min(delay_years * 0.04, 0.20)  # 最多20%
+            delay_rate = min(delay_years * 0.04, 0.20)
             delay_bonus = base_pension * delay_rate
             result['delay_retirement_bonus'] = delay_bonus
             base_pension += delay_bonus
 
         result['monthly_pension'] = base_pension
-        result['eligible'] = True
-
-        if verbose:
-            print("\n📘【勞保老年年金計算結果】")
-            print(f"投保年資: {insurance_years} 年，平均薪資: ${avg_salary:,.0f}")
-            print(f"A式計算: ${formula_a:,.0f}")
-            if insurance_years > 15:
-                print(f"  ├ 前15年: ${avg_salary:,.0f} × 15 × 0.775% = ${avg_salary * 15 * 0.00775:,.0f}")
-                print(f"  ├ 超過部分: ${avg_salary:,.0f} × {insurance_years-15} × 1.55% = ${avg_salary * (insurance_years-15) * 0.0155:,.0f}")
-                print(f"  └ 基本保障: +${3000:,.0f}")
-            print(f"B式計算: ${avg_salary:,.0f} × {insurance_years} × 1.55% = ${formula_b:,.0f}")
-            print(f"擇優選擇: {result['formula']} = ${max(formula_a, formula_b):,.0f}")
-            
-            if delay_years > 0:
-                print(f"延後請領加計: +${result['delay_retirement_bonus']:,.0f} ({delay_years}年 × 4% = {delay_years*4}%)")
-                print(f"👉 最終月領金額: ${result['monthly_pension']:,.0f}")
-            else:
-                print(f"👉 預估月領金額: ${result['monthly_pension']:,.0f}")
+        result['eligible'] = True # 因為已滿足年資條件，在法定年齡時必定符合資格
+        result['formula'] = 'A式' if formula_a >= formula_b else 'B式'
+        result['formula_a'] = formula_a
+        result['formula_b'] = formula_b
                 
         return result
 
