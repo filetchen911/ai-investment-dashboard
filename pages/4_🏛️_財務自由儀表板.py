@@ -77,16 +77,25 @@ if not st.session_state.edit_mode and saved_results:
     # 總覽區塊
     st.markdown("---")
     st.subheader("📊 您的退休金流總覽")
+
+    retirement_age = saved_plan.get('retirement_age', 65)
+    legal_age = saved_results.get('labor_insurance', {}).get('legal_age', 65)
+    pension_monthly = saved_results.get('labor_pension', {}).get('monthly_pension', 0)
+    insurance_monthly = saved_results.get('labor_insurance', {}).get('monthly_pension', 0)
+    total_at_legal_age = pension_monthly + insurance_monthly
+    
     if retirement_age < legal_age:
-        st.markdown(f"""
-        #### 兩階段退休現金流
-        - **{retirement_age} ~ {legal_age - 1} 歲**：每月收入 (僅勞退) <font color='green'>**NT$ {pension_monthly:,.0f}**</font>
-        - **{legal_age} 歲起**：每月收入 (勞退+勞保) <font color='blue'>**NT$ {pension_monthly + insurance_monthly:,.0f}**</font> (勞退 ${pension_monthly:,.0f} + 勞保 ${insurance_monthly:,.0f})
-        """, unsafe_allow_html=True)
+        # 使用 st.metric 來顯示，避免格式衝突
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(label=f"{retirement_age} ~ {legal_age - 1} 歲 (僅勞退)", value=f"NT$ {pension_monthly:,.0f} /月")
+        with col2:
+            st.metric(label=f"{legal_age} 歲起 (勞退+勞保)", value=f"NT$ {total_at_legal_age:,.0f} /月",
+                      help=f"勞退 ${pension_monthly:,.0f} + 勞保 ${insurance_monthly:,.0f}")
     else:
         st.metric(
             label=f"預計 {retirement_age} 歲退休後，每月總退休金 (勞退+勞保)",
-            value=f"NT$ {pension_monthly + insurance_monthly:,.0f}"
+            value=f"NT$ {total_at_legal_age:,.0f}"
         )
     
     replacement_ratio = results.get('summary', {}).get('replacement_ratio', 0)
