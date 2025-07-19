@@ -1,4 +1,6 @@
-# pages/3_📈_決策輔-助指標.py
+
+# pages/3_📈_決策輔助指標.py
+
 import streamlit as st
 import pandas as pd
 import datetime
@@ -49,4 +51,8 @@ if economic_data_report:
                     else:
                         st.write("暫無趨勢數據。")
 else:
+<<<<<<< HEAD
     st.info("今日的宏觀經濟數據尚未生成，或正在處理中。")
+=======
+    st.info("今日的宏觀經濟數據尚未生成，或正在處理中。")
+>>>>>>> 2b574fdea3656ebfc0e70ff2d6e0ceecc5a07f1e
