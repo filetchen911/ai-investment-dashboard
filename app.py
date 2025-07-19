@@ -1,4 +1,6 @@
-# app.py (v4.0.0 - 多頁面架構版)
+# app.py (v4.1.0)
+# App Version: v4.1.0
+# Description: Added page link for Financial Freedom Dashboard.
 
 import streamlit as st
 from utils import signup_user, login_user, init_firebase, APP_VERSION
@@ -62,6 +64,7 @@ def main():
         st.page_link("pages/1_📊_資產概覽.py", label="前往資產概覽", icon="📊")
         st.page_link("pages/2_💡_AI_新聞精選.py", label="查看 AI 每日洞察", icon="💡")
         st.page_link("pages/3_📈_決策輔助指標.py", label="分析關鍵經濟指標", icon="📈")
+        st.page_link("pages/4_🏛️_財務自由.py", label="規劃您的財務自由", icon="🏛️") 
     else:
         st.info("👋 請從左側側邊欄登入或註冊，以開始使用。")
 
