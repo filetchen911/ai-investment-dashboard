@@ -1,9 +1,8 @@
-# app.py (v4.1.0)
-# App Version: v4.1.0
-# Description: Added page link for Financial Freedom Dashboard.
+# app.py (v4.3.1)
 
 import streamlit as st
-from utils import signup_user, login_user, init_firebase, APP_VERSION
+from utils import signup_user, login_user, init_firebase
+from config import APP_VERSION
 
 # --- 初始化 ---
 # st.cache_resource 確保 Firebase 只被初始化一次

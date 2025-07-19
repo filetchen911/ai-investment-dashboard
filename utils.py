@@ -1,5 +1,4 @@
-# utils.py
-# App Version: v4.3.0
+# utils.py (v4.3.1)
 
 import streamlit as st
 import pandas as pd
@@ -14,12 +13,10 @@ import plotly.express as px
 import numpy as np
 import logging
 import sys
-# --- [v4.1] ---
 import numpy_financial as npf
 from typing import Dict, List, Tuple, Optional
-# --- [v4.1] ---
+from config import APP_VERSION # <--- 從 config.py 引用
 
-APP_VERSION = "v4.3.0" # <-- 更新版本號
 
 # 設定日誌系統
 logging.basicConfig(
