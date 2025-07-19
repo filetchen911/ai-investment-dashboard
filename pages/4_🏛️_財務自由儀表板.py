@@ -1,7 +1,7 @@
 # pages/4_🏛️_財務自由儀表板.py
-# App Version: v4.3.0
+# App Version: v4.3.1
 # Depends on: utils.py v4.3.0
-# Description: Implemented seniority input simplification, two-stage cashflow display, data freshness alerts, and future simulation logic.
+# Description: Fixed NameError for charts by correcting display block scope.
 
 import streamlit as st
 import pandas as pd
@@ -67,15 +67,16 @@ if not st.session_state.edit_mode and saved_results:
         st.session_state.edit_mode = True
         st.rerun()
 
-    # --- [v4.3] 退休金流總覽 ---
+    # --- [v4.3.1 修正] 將所有結果顯示區塊都放在這個 if 判斷式內 ---
+    results = saved_results
+    retirement_age = saved_plan.get('retirement_age', 65)
+    legal_age = results.get('labor_insurance', {}).get('legal_age', 65)
+    pension_monthly = results.get('labor_pension', {}).get('monthly_pension', 0)
+    insurance_monthly = results.get('labor_insurance', {}).get('monthly_pension', 0)
+
+    # 總覽區塊
     st.markdown("---")
     st.subheader("📊 您的退休金流總覽")
-
-    retirement_age = saved_plan.get('retirement_age', 65)
-    legal_age = saved_results.get('labor_insurance', {}).get('legal_age', 65)
-    pension_monthly = saved_results.get('labor_pension', {}).get('monthly_pension', 0)
-    insurance_monthly = saved_results.get('labor_insurance', {}).get('monthly_pension', 0)
-
     if retirement_age < legal_age:
         st.markdown(f"""
         #### 兩階段退休現金流
@@ -88,22 +89,18 @@ if not st.session_state.edit_mode and saved_results:
             value=f"NT$ {pension_monthly + insurance_monthly:,.0f}"
         )
     
-    # 接著顯示所得替代率
-    replacement_ratio = saved_results.get('summary', {}).get('replacement_ratio', 0)
-    analysis = saved_results.get('summary', {}).get('analysis', {})
-    st.metric(
-            label="所得替代率",
-            value=f"{replacement_ratio:.1f} %",
-            help="退休後每月收入 / 退休前月薪"
-    )
+    replacement_ratio = results.get('summary', {}).get('replacement_ratio', 0)
+    analysis = results.get('summary', {}).get('analysis', {})
+    st.metric(label="所得替代率", value=f"{replacement_ratio:.1f} %", help="退休後每月收入 / 退休前月薪")
     st.info(f"{analysis.get('color', '⚪️')} **綜合評估：{analysis.get('level', '未知')}**")
 
+    # 詳細分析區塊
     st.markdown("---")
     st.subheader("詳細分析")
     col1, col2 = st.columns(2)
     with col1:
         with st.container(border=True):
-            pension = saved_results['labor_pension']
+            pension = results['labor_pension']
             st.markdown("#### **勞工退休金 (個人專戶)**")
             st.metric("退休時帳戶總額", f"NT$ {pension['final_amount']:,.0f}")
             st.metric("預估月領金額", f"NT$ {pension['monthly_pension']:,.0f}" if pension['can_monthly_payment'] else "N/A (僅可一次領)")
@@ -111,53 +108,43 @@ if not st.session_state.edit_mode and saved_results:
                 st.warning("提醒：因退休時總提繳年資未滿15年，僅可一次領取。")
     with col2:
         with st.container(border=True):
-            insurance = saved_results['labor_insurance']
+            insurance = results['labor_insurance']
             st.markdown("#### **勞工保險 (老年年金)**")
             st.metric("擇優公式", insurance['formula'])
             st.metric("預估月領金額", f"NT$ {insurance['monthly_pension']:,.0f}")
-            
-            # [v4.3] 智慧提醒
             if insurance.get('is_projected_at_legal_age'):
                 st.info(f"ℹ️ 您選擇在 {retirement_age} 歲退休，勞保年金依法需至 {insurance['legal_age']} 歲才能開始請領。上列金額為模擬您於 {insurance['legal_age']} 歲時可領取的月退俸。")
             elif not insurance.get('eligible'):
                  st.warning(f"提醒：{insurance.get('remark', '請領資格不符')}")
 
-    # --- 敏感度分析圖表 ---
+    # 敏感度分析圖表
     st.markdown("---")
     st.subheader("報酬率敏感度分析")
     sensitivity_data = results['sensitivity_analysis']
     df = pd.DataFrame.from_dict(sensitivity_data, orient='index')
     df.index.name = '年化報酬率'
     df.reset_index(inplace=True)
-
     fig = px.bar(
-        df, x='年化報酬率', y='final_amount',
-        text='final_amount',
+        df, x='年化報酬率', y='final_amount', text='final_amount',
         title='不同「勞退自提專戶報酬率」對「退休時總額」的影響',
         labels={'final_amount': '退休時帳戶總額 (NT$)', '年化報酬率': '預估年化報酬率 (%)'}
     )
     fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 逐年提繳明細 ---
+    # 逐年提繳明細
     with st.expander("查看勞退個人專戶 - 逐年累積模擬"):
-        details_df = pd.DataFrame(pension['contribution_details'])
+        pension_details = results.get('labor_pension', {})
+        details_df = pd.DataFrame(pension_details.get('contribution_details', []))
         if not details_df.empty:
-            # 重新命名欄位以利閱讀
             display_df = details_df.rename(columns={
-                'year': '年度',
-                'monthly_salary': '當年度月薪',
-                'capped_salary': '提繳工資',
-                'annual_contribution': '年度總提繳',
-                'investment_return': '年度投資收益',
+                'year': '年度', 'monthly_salary': '當年度月薪', 'capped_salary': '提繳工資',
+                'annual_contribution': '年度總提繳', 'investment_return': '年度投資收益',
                 'account_balance_before': '年初帳戶餘額'
             })
             display_df['年末總餘額'] = display_df['年初帳戶餘額'] + display_df['年度投資收益'] + display_df['年度總提繳']
-            
-            # 格式化顯示
             for col in ['當年度月薪', '提繳工資', '年度總提繳', '年度投資收益', '年初帳戶餘額', '年末總餘額']:
                 display_df[col] = display_df[col].apply(lambda x: f"{x:,.0f}")
-
             st.dataframe(display_df[['年度', '當年度月薪', '年度總提繳', '年度投資收益', '年末總餘額']], use_container_width=True)
 
 
