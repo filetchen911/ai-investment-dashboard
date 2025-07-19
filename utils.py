@@ -249,7 +249,7 @@ def load_historical_value(user_id):
 def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 
     calculator = RetirementCalculator()
-    
+
     # 從 user_inputs 解構參數
     # 勞退參數
     pension_params = {
@@ -543,7 +543,6 @@ class RetirementCalculator:
 
         return result
 
-    # --- [v4.3.0 修改] ---
     def calculate_labor_insurance_pension(self, avg_salary: float, insurance_years: int, 
                                           claim_age: int, birth_year: int, verbose: bool = True) -> Dict:
         """
@@ -605,6 +604,7 @@ class RetirementCalculator:
         result['formula_b'] = formula_b
                 
         return result
+
 
     def calculate_replacement_ratio_suggestions(self, replacement_ratio: float, 
                                               current_salary: float, years_to_retirement: int) -> Dict:
