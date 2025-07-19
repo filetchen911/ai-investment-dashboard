@@ -247,13 +247,9 @@ def load_historical_value(user_id):
 
 # --- [v4.1] 退休金計算引擎的包裝函數 ---
 def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
-   """
-    接收前端傳來的參數字典，呼叫 RetirementCalculator 進行完整分析，
-    並將所有結果打包成一個字典回傳。
-    這是前端唯一需要呼叫的退休金計算函數。
-    """
-    calculator = RetirementCalculator()
 
+    calculator = RetirementCalculator()
+    
     # 從 user_inputs 解構參數
     # 勞退參數
     pension_params = {
