@@ -27,7 +27,7 @@ db, _ = init_firebase()
 st.info("在此頁面模擬您的勞保與勞退狀況。儲存後的結果，將被用於「財務自由儀表板」的最終整合分析。")
 
 # 載入使用者已儲存的計畫
-saved_plan = load_retirement_plan(user_id, db)
+saved_plan = load_retirement_plan(user_id)
 defaults = {
     'current_age': saved_plan.get('current_age', 35),
     'birth_year': saved_plan.get('birth_year', 1990),
