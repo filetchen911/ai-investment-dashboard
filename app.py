@@ -64,20 +64,20 @@ def main():
         st.subheader("核心功能")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.page_link("pages/10_📊_資產總覽.py", label="資產總覽", icon="📊")
+            st.page_link("pages/10_asset_overview.py", label="資產總覽", icon="📊")
         with c2:
-            st.page_link("pages/20_🏦_退休金總覽.py", label="退休金總覽", icon="🏦")
+            st.page_link("pages/20_pension_overview.py", label="退休金總覽", icon="🏦")
         with c3:
-            st.page_link("pages/30_💳_債務管理.py", label="債務管理", icon="💳")
+            st.page_link("pages/30_debt_management.py", label="債務管理", icon="💳")
         with c4:
-            st.page_link("pages/40_🏁_財務自由儀表板.py", label="財務自由儀表板", icon="🏁")
+            st.page_link("pages/40_financial_dashboard.py", label="財務自由儀表板", icon="🏁")
         st.markdown("---")
         st.subheader("智慧洞察")
         c1, c2 = st.columns(2)
         with c1:
-            st.page_link("pages/50_💡_AI_新聞精選.py", label="AI 每日洞察", icon="💡")
+            st.page_link("pages/50_ai_insights.py", label="AI 每日洞察", icon="💡")
         with c2:
-            st.page_link("pages/60_📈_決策輔助指標.py", label="關鍵經濟指標", icon="📈")            
+            st.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")         
     else:
         st.info("👋 請從左側側邊欄登入或註冊，以開始使用。")
 
