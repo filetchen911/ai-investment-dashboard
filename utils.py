@@ -1,4 +1,4 @@
-# utils.py (v4.3.1)
+# utils.py (v5.0.0)
 
 import streamlit as st
 import pandas as pd
@@ -216,6 +216,30 @@ def load_latest_economic_data():
         st.error(f"讀取宏觀經濟數據時發生錯誤: {e}")
         return None
 
+# --- [v5.0.0 新增] ---
+@st.cache_data(ttl=300)
+def load_retirement_plan(uid):
+    """讀取使用者已儲存的退休規劃參數"""
+    db, _ = init_firebase()
+    user_doc = db.collection('users').document(uid).get()
+    if user_doc.exists and 'retirement_plan' in user_doc.to_dict():
+        return user_doc.to_dict()['retirement_plan']
+    return {}
+
+@st.cache_data(ttl=300)
+def load_user_liabilities(uid):
+    """從 Firestore 讀取使用者的所有債務資料"""
+    db, _ = init_firebase()
+    docs = db.collection('users').document(uid).collection('liabilities').stream()
+    data = []
+    for doc in docs:
+        doc_data = doc.to_dict()
+        doc_data['doc_id'] = doc.id
+        if 'start_date' in doc_data and isinstance(doc_data['start_date'], datetime):
+            doc_data['start_date'] = doc_data['start_date'].date()
+        data.append(doc_data)
+    return pd.DataFrame(data)
+
 @st.cache_data(ttl=1800)
 def get_exchange_rate(from_currency="USD", to_currency="TWD"):
     try:
@@ -304,6 +328,97 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 
     return final_results
 
+def get_holistic_financial_projection(user_id: str) -> Dict:
+    # 1. 初始化
+    plan = load_retirement_plan(user_id)
+    assets_df = load_user_assets_from_firestore(user_id)
+    liabilities_df = load_user_liabilities(user_id)
+    
+    # 提取使用者假設
+    return_rate = plan.get('expected_asset_return_rate', 7.0) / 100
+    dividend_yield = plan.get('expected_dividend_yield', 2.5) / 100
+    withdrawal_rate = plan.get('retirement_withdrawal_rate', 4.0) / 100
+    inflation_rate = plan.get('inflation_rate', 2.0) / 100
+    
+    # 提取核心參數
+    current_age = plan.get('current_age', 35)
+    retirement_age = plan.get('retirement_age', 65)
+    
+    # 初始財務狀態
+    current_assets = assets_df['市值_TWD'].sum()
+    current_liabilities = liabilities_df['outstanding_balance'].sum()
+    
+    # 取得退休金預估
+    pension_results = get_full_retirement_analysis(plan)
+    legal_age = pension_results.get('labor_insurance', {}).get('legal_age', 65)
+    
+    projection_timeseries = []
+    
+    # 2. 模擬迴圈
+    for age in range(current_age, 101):
+        year_data = {"age": age}
+        
+        # 3. 資產累積期
+        if age < retirement_age:
+            year_data["phase"] = "accumulation"
+            current_assets *= (1 + return_rate)
+            # 此模型簡化後的債務償還
+            if not liabilities_df.empty:
+                annual_payment = liabilities_df['monthly_payment'].sum() * 12
+                current_liabilities -= annual_payment
+                current_liabilities = max(0, current_liabilities)
+            
+            year_data["disposable_income"] = 0 # 尚無退休收入
+        
+        # 4. 資產提領期
+        else:
+            year_data["phase"] = "decumulation"
+            
+            # 計算收入流
+            asset_income = (current_assets * dividend_yield) + (current_assets * withdrawal_rate)
+            
+            pension_income = 0
+            if age >= legal_age:
+                pension_income = pension_results['summary']['total_monthly_pension'] * 12
+            elif age >= 60:
+                pension_income = pension_results['labor_pension']['monthly_pension'] * 12
+
+            total_income = asset_income + pension_income
+            
+            # 計算支出
+            annual_debt_payment = 0
+            if not liabilities_df.empty and current_liabilities > 0:
+                annual_debt_payment = liabilities_df['monthly_payment'].sum() * 12
+                current_liabilities -= annual_debt_payment
+                current_liabilities = max(0, current_liabilities)
+
+            disposable_income = total_income - annual_debt_payment
+            year_data["disposable_income"] = disposable_income
+            
+            # 更新資產價值
+            net_withdrawal = (disposable_income + annual_debt_payment) - (pension_income) # 從資產中提出的金額
+            current_assets -= net_withdrawal
+            current_assets *= (1 + return_rate)
+
+        year_data["year_end_assets"] = current_assets
+        year_data["year_end_liabilities"] = current_liabilities
+        
+        # 5. 通膨調整
+        years_from_now = age - current_age
+        inflation_divisor = (1 + inflation_rate) ** years_from_now
+        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
+        year_data["disposable_income_real_value"] = year_data["disposable_income"] / inflation_divisor
+
+        projection_timeseries.append(year_data)
+
+    # 6. 最終輸出模型
+    summary = {
+        "assets_at_retirement_real_value": next((y["year_end_assets_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0),
+        "first_year_disposable_income_real_value": next((y["disposable_income_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0)
+    }
+    
+    return {"summary": summary, "projection_timeseries": projection_timeseries}
+    
 # --- [v4.1] 台灣退休金計算引擎 ---
 class RetirementCalculator:
     def __init__(self):
