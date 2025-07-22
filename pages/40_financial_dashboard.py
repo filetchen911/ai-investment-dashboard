@@ -6,12 +6,15 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from utils import (
+    render_sidebar,    
     init_firebase,
     load_user_assets_from_firestore,
     load_retirement_plan,
     load_user_liabilities,
     get_holistic_financial_projection # 引入我們的終極計算引擎
 )
+
+render_sidebar()
 
 # --- 頁面配置 ---
 st.set_page_config(layout="wide", page_title="財務自由儀表板")

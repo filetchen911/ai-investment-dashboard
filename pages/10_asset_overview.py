@@ -10,6 +10,7 @@ import datetime
 import plotly.express as px
 from firebase_admin import firestore
 from utils import (
+    render_sidebar,
     init_firebase, 
     update_quotes_manually, 
     load_user_assets_from_firestore, 
@@ -18,6 +19,8 @@ from utils import (
     load_historical_value,
     calculate_asset_metrics # <-- [v5.0.0] 引入新的指標計算中心
 )
+
+render_sidebar()
 
 st.header("📊 資產概覽")
 

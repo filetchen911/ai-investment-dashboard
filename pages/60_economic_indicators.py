@@ -4,7 +4,9 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from utils import init_firebase, load_latest_economic_data
+from utils import init_firebase, load_latest_economic_data, render_sidebar
+
+render_sidebar()
 
 st.set_page_config(layout="wide", page_title="關鍵經濟指標趨勢")
 st.title("📈 關鍵經濟指標趨勢")

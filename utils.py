@@ -144,6 +144,47 @@ def update_quotes_manually():
     progress_bar.empty()
     return updated_count
 
+# --- 側邊欄 ---
+def render_sidebar():
+    if 'user_id' not in st.session_state:
+        st.sidebar.header("歡迎使用")
+        choice = st.sidebar.radio("請選擇操作", ["登入", "註冊"], horizontal=True)
+        with st.sidebar.form("auth_form"):
+            email = st.text_input("電子郵件")
+            password = st.text_input("密碼", type="password")
+            if st.form_submit_button("執行"):
+                if not email or not password:
+                    st.sidebar.warning("請輸入電子郵件和密碼。")
+                else:
+                    try:
+                        if choice == "註冊":
+                            signup_user(db, firebase_config, email, password)
+                            st.sidebar.success("✅ 註冊成功！請使用您的帳號登入。")
+                        elif choice == "登入":
+                            user = login_user(firebase_config, email, password)
+                            st.session_state['user_id'] = user['localId']
+                            st.session_state['user_email'] = user['email']
+                            st.rerun()
+                    except Exception as e:
+                        st.sidebar.error(f"操作失敗: {e}")
+    else:
+        st.sidebar.success(f"已登入: {st.session_state['user_email']}")
+        if st.sidebar.button("登出"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+        # --- [v5.0.0 修正] 手動建立側邊欄導覽 ---
+        st.sidebar.markdown("---")
+        st.sidebar.page_link("pages/10_asset_overview.py", label="資產總覽", icon="📊")
+        st.sidebar.page_link("pages/20_pension_overview.py", label="退休金總覽", icon="🏦")
+        st.sidebar.page_link("pages/30_debt_management.py", label="債務管理", icon="💳")
+        st.sidebar.page_link("pages/40_financial_dashboard.py", label="財務自由儀表板", icon="🏁")
+        st.sidebar.page_link("pages/50_ai_insights.py", label="AI 每日洞察", icon="💡")
+        st.sidebar.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")
+        st.sidebar.markdown("---")
+        st.sidebar.caption(f"App Version: {APP_VERSION}")
+        
 # --- 用戶認證函式 ---
 def signup_user(db, firebase_config, email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={firebase_config['apiKey']}"
@@ -310,7 +351,7 @@ def calculate_asset_metrics(assets_df: pd.DataFrame) -> pd.DataFrame:
     df['分類'] = df['類型']
 
     return df
-    
+
 def calculate_mortgage_payments(principal, annual_rate, years, grace_period_years=0):
     """
     計算房貸在寬限期與本息攤還期的月付金。
