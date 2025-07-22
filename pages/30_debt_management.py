@@ -45,46 +45,49 @@ else:
 
 # --- 新增/編輯表單 ---
 with st.expander("➕ 新增債務資料"):
-    with st.form("debt_form"):
+    with st.form("debt_form", clear_on_submit=True): # 建議加上 clear_on_submit
         st.subheader("新增一筆債務")
         
         debt_types = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
         c1, c2, c3 = st.columns(3)
         
         with c1:
-            debt_type = st.selectbox("債務類型", debt_types, key="new_debt_type")
-            custom_name = st.text_input("自訂名稱", help="例如：我的房子、國泰世華信貸", key="new_custom_name")
-            total_amount = st.number_input("總貸款金額", min_value=0, step=10000, key="new_total_amount")
-            outstanding_balance = st.number_input("剩餘未償還本金", min_value=0, step=10000, key="new_outstanding_balance")
+            debt_type = st.selectbox("債務類型", debt_types)
+            custom_name = st.text_input("自訂名稱", help="例如：我的房子、國泰世華信貸")
+            total_amount = st.number_input("總貸款金額", min_value=0, step=10000)
+            outstanding_balance = st.number_input("剩餘未償還本金", min_value=0, step=10000)
         
         with c2:
-            interest_rate = st.number_input("目前年利率 (%)", 0.0, 20.0, step=0.01, format="%.2f", key="new_interest_rate")
-            loan_period_years = st.number_input("總貸款年限", min_value=1, max_value=40, value=30, key="new_loan_period_years")
-            grace_period_years = st.number_input("寬限期年數 (無則填0)", 0, 10, key="new_grace_period_years")
+            interest_rate = st.number_input("目前年利率 (%)", 0.0, 20.0, step=0.01, format="%.2f")
+            loan_period_years = st.number_input("總貸款年限", min_value=1, max_value=40, value=30)
+            grace_period_years = st.number_input("寬限期年數 (無則填0)", 0, 10)
 
         with c3:
-            start_date = st.date_input("貸款起始日期", value=datetime.now(), key="new_start_date")
-            # --- [v5.0.0 升級] 自動計算月付金 ---
-            # 只有房貸類型才自動計算
+            start_date = st.date_input("貸款起始日期", value=datetime.now())
+            
+            # --- [v5.0.0 修正] ---
+            # 宣告一個變數來接收手動輸入的值
+            manual_payment_input = 0
+
             if debt_type == "房屋貸款":
                 payments = calculate_mortgage_payments(total_amount, interest_rate, loan_period_years, grace_period_years)
                 st.markdown("---")
                 st.markdown("**自動計算月付金 (預估)**")
                 st.metric("寬限期 (只繳息)", f"$ {payments['grace_period_payment']:,.0f} /月")
                 st.metric("本息攤還期", f"$ {payments['regular_payment']:,.0f} /月")
-                # 將計算結果存入 session state 以便後續儲存
-                st.session_state['calculated_payments'] = payments
             else:
-                 # 其他類型貸款，讓使用者手動輸入
-                st.session_state['manual_payment'] = st.number_input("每月還款金額", min_value=0, step=1000, key="new_manual_payment")
-
+                # 其他類型貸款，讓使用者手動輸入，並將值存入變數
+                manual_payment_input = st.number_input("每月還款金額", min_value=0, step=1000)
 
         if st.form_submit_button("儲存這筆債務"):
-            # 決定要儲存的月付金
+            final_monthly_payment = 0
             if debt_type == "房屋貸款":
-                final_monthly_payment = st.session_state.get('calculated_payments', {}).get('regular_payment', 0)
+                # 直接重新計算一次以確保拿到最新值
+                payments = calculate_mortgage_payments(total_amount, interest_rate, loan_period_years, grace_period_years)
+                final_monthly_payment = payments.get('regular_payment', 0)
             else:
-                final_monthly_payment = st.session_state.get('manual_payment', 0)
+                # 直接使用我們宣告的變數
+                final_monthly_payment = manual_payment_input
 
             form_data = {
                 "debt_type": debt_type, "custom_name": custom_name,
@@ -97,7 +100,7 @@ with st.expander("➕ 新增債務資料"):
             db.collection('users').document(user_id).collection('liabilities').add(form_data)
             st.success(f"債務「{custom_name or debt_type}」已成功新增！")
             st.cache_data.clear()
-            st.rerun() # --- [v5.0.0 升級] 新增 rerun 以自動收合表單 ---
+            st.rerun()
 
 st.markdown("---")
 
