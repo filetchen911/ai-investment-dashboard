@@ -65,6 +65,7 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
     
 
         if st.form_submit_button("儲存並進行分析", use_container_width=True):
+            # 1. 收集所有使用者輸入
             plan_data = {
                 'current_age': current_age,
                 'birth_year': birth_year,
@@ -79,31 +80,24 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
                 'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
-            # 使用 set(..., merge=True) 可以更新或建立文件，且只更新指定欄位
-            db.collection('users').document(user_id).set({'retirement_plan': plan_data}, merge=True)
-            st.success("您的退休金規劃已成功儲存！")
-            # 清除快取，以便下次進入頁面時能讀取到最新資料
-            st.cache_data.clear()
-            st.rerun()
-            
-            # 直接呼叫計算引擎
+            # 2. 呼叫計算引擎進行分析
             with st.spinner("正在為您計算退休金流..."):
-                analysis_results = get_full_retirement_analysis(user_inputs)
-                
-                # 將輸入參數與計算結果都存入 session_state，以便下方顯示
-                st.session_state['pension_plan_inputs'] = user_inputs
-                st.session_state['pension_plan_results'] = analysis_results
+                # 注意：直接將收集到的 plan_data 傳遞給計算函數
+                analysis_results = get_full_retirement_analysis(plan_data) 
+            
+            # 3. 將輸入與結果都存入 session state，以便立即顯示
+            st.session_state['pension_plan_inputs'] = plan_data
+            st.session_state['pension_plan_results'] = analysis_results
 
-                # 也一併存入 Firestore
-                user_ref = db.collection('users').document(user_id)
-                user_ref.set({
-                    'retirement_plan': user_inputs,
-                    'pension_analysis_results': analysis_results # 可選，快取結果
-                }, merge=True)
+            # 4. 將使用者輸入的規劃參數存入 Firestore
+            db.collection('users').document(user_id).set({'retirement_plan': plan_data}, merge=True)
+            st.success("您的退休金規劃已更新並完成分析！")
+            
+            # 5. 清除數據快取
+            st.cache_data.clear()
 
-                st.success("您的退休金規劃已更新！")
-                st.cache_data.clear()
-                # 不需要 rerun，直接在下方顯示結果
+            # (選擇性) 如果您希望點擊按鈕後表單能收合，可以在所有操作的最後一步加上 rerun
+            st.rerun() 
 
 # --- 結果顯示區塊 ---
 # 檢查 session_state 中是否有計算結果可以顯示

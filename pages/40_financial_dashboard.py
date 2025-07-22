@@ -47,19 +47,19 @@ with col1:
     with st.container(border=True):
         st.markdown(f"### {'✅' if is_assets_done else '❌'} 步驟一：資產盤點")
         st.write("記錄您所有的投資與現金資產。")
-        st.page_link("pages/10_📊_資產總覽.py", label="前往管理資產", icon="📊")
+        st.page_link("pages/10_asset_overview.py", label="前往管理資產", icon="📊")
 
 with col2:
     with st.container(border=True):
         st.markdown(f"### {'✅' if is_pension_done else '❌'} 步驟二：退休金規劃")
         st.write("設定您的退休目標與勞保/勞退參數。")
-        st.page_link("pages/20_🏦_退休金總覽.py", label="前往規劃退休金", icon="🏦")
+        st.page_link("pages/20_pension_overview.py", label="前往規劃退休金", icon="🏦")
 
 with col3:
     with st.container(border=True):
         st.markdown(f"### {'✅' if is_liabilities_done else '❌'} 步驟三：債務盤點")
         st.write("記錄您所有的貸款與負債狀況。")
-        st.page_link("pages/30_💳_債務管理.py", label="前往管理債務", icon="💳")
+        st.page_link("pages/30_debt_management.py", label="前往管理債務", icon="💳")
 
 st.markdown("---")
 

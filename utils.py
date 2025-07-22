@@ -269,6 +269,28 @@ def load_historical_value(user_id):
         st.error(f"讀取歷史淨值時發生錯誤: {e}")
         return pd.DataFrame()
 
+def calculate_mortgage_payments(principal, annual_rate, years, grace_period_years=0):
+    """
+    計算房貸在寬限期與本息攤還期的月付金。
+    """
+    if annual_rate <= 0 or years <= 0 or principal <= 0:
+        return {"grace_period_payment": 0, "regular_payment": 0}
+
+    monthly_rate = annual_rate / 100 / 12
+    total_months = years * 12
+    
+    # 計算寬限期（只繳利息）的月付金
+    grace_payment = principal * monthly_rate
+    
+    # 計算本息攤還期的月付金
+    # npf.pmt(利率, 期數, 現值)
+    regular_payment = -npf.pmt(monthly_rate, total_months - (grace_period_years * 12), principal)
+    
+    return {
+        "grace_period_payment": round(grace_payment),
+        "regular_payment": round(regular_payment)
+    }
+
 # --- [v4.1] 退休金計算引擎的包裝函數 ---
 def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 
