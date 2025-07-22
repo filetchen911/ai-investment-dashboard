@@ -68,6 +68,8 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
 
         if st.form_submit_button("儲存並進行分析", use_container_width=True):
             # 1. 收集所有使用者輸入
+            years_to_retirement = retirement_age - current_age
+            final_seniority = current_total_seniority + years_to_retirement
             plan_data = {
                 'current_age': current_age,
                 'birth_year': birth_year,
@@ -80,6 +82,10 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
                 'salary_growth_rate': salary_growth_rate,
                 'years_to_retirement': retirement_age - current_age,
                 'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # --- [v5.0.0 修正] ---
+                # 將後端需要的 `insurance_seniority` 和 `pension_contributed_years` 一併傳入
+                'insurance_seniority': max(0, final_seniority),
+                'pension_contributed_years': max(0, final_seniority)                
             }
             
             # 2. 呼叫計算引擎進行分析
