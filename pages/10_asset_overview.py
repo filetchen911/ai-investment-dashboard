@@ -1,4 +1,7 @@
-# pages/1_📊_資產概覽.py (v4.0.2)
+# pages/10_asset_overview.py
+# App Version: v5.0.0
+# Description: Refactored to use the central calculate_asset_metrics function from utils.
+
 
 import streamlit as st
 import pandas as pd
@@ -12,7 +15,8 @@ from utils import (
     load_user_assets_from_firestore, 
     load_quotes_from_firestore, 
     get_exchange_rate,
-    load_historical_value
+    load_historical_value,
+    calculate_asset_metrics # <-- [v5.0.0] 引入新的指標計算中心
 )
 
 st.header("📊 資產概覽")
@@ -58,47 +62,35 @@ with st.expander("➕ 新增資產"):
             else: st.error("代號、數量、成本價為必填欄位，且必須大於 0。")
 st.markdown("---")
 
+# --- [v5.0.0 重構核心] ---
+# 1. 讀取最原始的資產數據
 assets_df = load_user_assets_from_firestore(user_id)
+
+# 2. 呼叫唯一的「指標計算中心」來處理數據
+#    所有複雜的 merge 和計算都已封裝在 calculate_asset_metrics 函數中
+df = calculate_asset_metrics(assets_df)
+# --- [重構結束] ---
 quotes_df = load_quotes_from_firestore()
 usd_to_twd_rate = get_exchange_rate("USD", "TWD")
 
 if assets_df.empty:
     st.info("您目前沒有資產。")
 else:
-    df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
-    
-    for col in ['數量', '成本價']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    
-    if 'Price' not in df.columns or df['Price'].isnull().all(): df['Price'] = df['成本價']
-    else: df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(df['成本價'])
-
-    if 'PreviousClose' not in df.columns or df['PreviousClose'].isnull().all(): df['PreviousClose'] = df['Price']
-    else: df['PreviousClose'] = pd.to_numeric(df['PreviousClose'], errors='coerce').fillna(df['Price'])
-
-    df['市值'] = df['Price'] * df['數量']
-    df['成本'] = df['成本價'] * df['數量']
-    df['損益'] = df['市值'] - df['成本']
-    df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益'], dtype=float), where=df['成本']!=0) * 100
-    df['今日漲跌'] = df['Price'] - df['PreviousClose']
-    df['今日總損益'] = (df['Price'] - df['PreviousClose']) * df['數量']            
-    df['今日漲跌幅'] = np.divide(df['今日漲跌'], df['PreviousClose'], out=np.zeros_like(df['Price'], dtype=float), where=df['PreviousClose']!=0) * 100
-
-    df['市值_TWD'] = df.apply(lambda r: r['市值'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['市值'], axis=1)
-    
-    df['分類'] = df['類型']
-    
+    # 從重構後的 df 中，直接提取需要顯示的總覽數據
+    # 這些計算現在由 calculate_asset_metrics 保證與其他模組一致
     total_value_twd = df['市值_TWD'].sum()
+
+    # 為了計算總損益，我們需要先計算台幣計價的總成本
+    # (這部分邏輯也由 calculate_asset_metrics 處理，但總計需要在頁面完成)
+    usd_to_twd_rate = df['市值_TWD'].sum() / df['市值'].sum() if df['市值'].sum() != 0 and 'USD' in df['幣別'].unique() else 1.0
     total_cost_twd = df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
     total_pnl_twd = total_value_twd - total_cost_twd
     total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
-
-    if total_value_twd > 0: df['佔比'] = (df['市值_TWD'] / total_value_twd) * 100
-    else: df['佔比'] = 0
                     
     k1, k2, k3 = st.columns(3)
     k1.metric("總資產價值 (約 TWD)", f"${total_value_twd:,.0f}")
     k2.metric("總損益 (約 TWD)", f"${total_pnl_twd:,.0f}", f"{total_pnl_ratio:.2f}%")
-    k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")            
+    k3.metric("美金匯率 (USD/TWD)", f"{usd_to_twd_rate:.2f}")          
     st.markdown("---")
 
     if total_value_twd > 0:

@@ -269,6 +269,48 @@ def load_historical_value(user_id):
         st.error(f"讀取歷史淨值時發生錯誤: {e}")
         return pd.DataFrame()
 
+def calculate_asset_metrics(assets_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    接收原始資產 DataFrame，回傳一個包含所有計算指標（市值、損益、佔比等）的新 DataFrame。
+    這是專案中唯一負責計算資產指標的地方。
+    """
+    if assets_df.empty:
+        return assets_df
+
+    # 1. 獲取報價與匯率
+    quotes_df = load_quotes_from_firestore()
+    usd_to_twd_rate = get_exchange_rate("USD", "TWD")
+
+    # 2. 合併與計算
+    df = pd.merge(assets_df, quotes_df, left_on='代號', right_on='Symbol', how='left')
+    
+    # 確保數值格式正確
+    for col in ['數量', '成本價']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    
+    df['Price'] = pd.to_numeric(df.get('Price'), errors='coerce').fillna(df['成本價'])
+    df['PreviousClose'] = pd.to_numeric(df.get('PreviousClose'), errors='coerce').fillna(df['Price'])
+
+    # 3. 計算所有指標
+    df['市值'] = df['Price'] * df['數量']
+    df['成本'] = df['成本價'] * df['數量']
+    df['損益'] = df['市值'] - df['成本']
+    df['損益比'] = np.divide(df['損益'], df['成本'], out=np.zeros_like(df['損益'], dtype=float), where=df['成本']!=0) * 100
+    df['今日漲跌'] = df['Price'] - df['PreviousClose']
+    df['今日總損益'] = (df['Price'] - df['PreviousClose']) * df['數量']            
+    df['今日漲跌幅'] = np.divide(df['今日漲跌'], df['PreviousClose'], out=np.zeros_like(df['Price'], dtype=float), where=df['PreviousClose']!=0) * 100
+    df['市值_TWD'] = df.apply(lambda r: r['市值'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['市值'], axis=1)
+    
+    total_value_twd = df['市值_TWD'].sum()
+    if total_value_twd > 0:
+        df['佔比'] = (df['市值_TWD'] / total_value_twd) * 100
+    else:
+        df['佔比'] = 0
+    
+    df['分類'] = df['類型']
+
+    return df
+    
 def calculate_mortgage_payments(principal, annual_rate, years, grace_period_years=0):
     """
     計算房貸在寬限期與本息攤還期的月付金。
@@ -353,9 +395,13 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 def get_holistic_financial_projection(user_id: str) -> Dict:
     # 1. 初始化
     plan = load_retirement_plan(user_id)
-    assets_df = load_user_assets_from_firestore(user_id)
+    raw_assets_df = load_user_assets_from_firestore(user_id) # 讀取原始數據
     liabilities_df = load_user_liabilities(user_id)
-    
+
+    # 2. 呼叫中心函數計算初始總資產
+    enriched_assets_df = calculate_asset_metrics(raw_assets_df)
+    current_assets = enriched_assets_df['市值_TWD'].sum() if not enriched_assets_df.empty else 0
+
     # 提取使用者假設
     return_rate = plan.get('expected_asset_return_rate', 7.0) / 100
     dividend_yield = plan.get('expected_dividend_yield', 2.5) / 100

@@ -1,6 +1,6 @@
-# pages/40_🏁_財務自由儀表板.py
+# pages/40_financial_dashboard.py
 # App Version: v5.0.0
-# Description: The final dashboard with guided checklist, global assumption inputs, and integrated analysis.
+# Description: Refactored to allow analysis even if some data modules are empty.
 
 import streamlit as st
 import pandas as pd
@@ -63,77 +63,72 @@ with col3:
 
 st.markdown("---")
 
-# --- 整合分析報告區 ---
-all_steps_done = is_assets_done and is_pension_done and is_liabilities_done
 
-if all_steps_done:
-    st.subheader("🚀 您的整合性財務分析報告")
+st.subheader("🚀 您的整合性財務分析報告")
+
+# --- [v5.0.0] 全局財務假設輸入表單 ---
+with st.form("global_assumptions_form"):
+    st.markdown("#### 請輸入您的全局財務假設")
     
-    # --- [v5.0.0] 全局財務假設輸入表單 ---
-    with st.form("global_assumptions_form"):
-        st.markdown("#### 請輸入您的全局財務假設")
-        
-        # 讀取已儲存的全局假設
-        plan = load_retirement_plan(user_id)
-        
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            asset_return_rate = st.slider("預期總資產年化報酬率 (%)", 0.0, 15.0, plan.get('asset_return_rate', 7.0), 0.5)
-        with c2:
-            dividend_yield = st.slider("預期年化股息率 (%)", 0.0, 10.0, plan.get('dividend_yield', 2.5), 0.5)
-        with c3:
-            withdrawal_rate = st.slider("退休後資產提領率 (%)", 1.0, 10.0, plan.get('withdrawal_rate', 4.0), 0.5)
-        with c4:
-            inflation_rate = st.slider("預估長期平均通膨率 (%)", 0.0, 5.0, plan.get('inflation_rate', 2.0), 0.1)
-        
-        submitted = st.form_submit_button("開始最終模擬", use_container_width=True)
+    # 讀取已儲存的全局假設
+    plan = load_retirement_plan(user_id)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        asset_return_rate = st.slider("預期總資產年化報酬率 (%)", 0.0, 15.0, plan.get('asset_return_rate', 7.0), 0.5)
+    with c2:
+        dividend_yield = st.slider("預期年化股息率 (%)", 0.0, 10.0, plan.get('dividend_yield', 2.5), 0.5)
+    with c3:
+        withdrawal_rate = st.slider("退休後資產提領率 (%)", 1.0, 10.0, plan.get('withdrawal_rate', 4.0), 0.5)
+    with c4:
+        inflation_rate = st.slider("預估長期平均通膨率 (%)", 0.0, 5.0, plan.get('inflation_rate', 2.0), 0.1)
+    
+    submitted = st.form_submit_button("開始最終模擬", use_container_width=True)
 
-    if submitted:
-        # 將全局假設存回 retirement_plan
-        updated_plan = {
-            'asset_return_rate': asset_return_rate,
-            'dividend_yield': dividend_yield,
-            'withdrawal_rate': withdrawal_rate,
-            'inflation_rate': inflation_rate
-        }
-        db.collection('users').document(user_id).set({'retirement_plan': updated_plan}, merge=True)
-        
-        # 呼叫終極計算引擎
-        with st.spinner("正在執行整合性財務模擬..."):
-            final_analysis = get_holistic_financial_projection(user_id)
-            # 將結果存入 session_state 以便重新整理後也能顯示
-            st.session_state['final_analysis_results'] = final_analysis
-        
-        st.success("模擬計算完成！")
+if submitted:
+    # 將全局假設存回 retirement_plan
+    updated_plan = {
+        'asset_return_rate': asset_return_rate,
+        'dividend_yield': dividend_yield,
+        'withdrawal_rate': withdrawal_rate,
+        'inflation_rate': inflation_rate
+    }
+    db.collection('users').document(user_id).set({'retirement_plan': updated_plan}, merge=True)
+    
+    # 呼叫終極計算引擎
+    with st.spinner("正在執行整合性財務模擬..."):
+        final_analysis = get_holistic_financial_projection(user_id)
+        # 將結果存入 session_state 以便重新整理後也能顯示
+        st.session_state['final_analysis_results'] = final_analysis
+    
+    st.success("模擬計算完成！")
 
-    # --- 顯示最終分析結果 ---
-    if 'final_analysis_results' in st.session_state:
-        final_analysis = st.session_state['final_analysis_results']
-        summary = final_analysis['summary']
-        projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
+# --- 顯示最終分析結果 ---
+if 'final_analysis_results' in st.session_state:
+    final_analysis = st.session_state['final_analysis_results']
+    summary = final_analysis['summary']
+    projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
 
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        col1.metric(
-            "預計退休時總資產 (以今日購買力計算)",
-            f"NT$ {summary['assets_at_retirement_real_value']:,.0f}"
-        )
-        col2.metric(
-            "退休後第一年可支配所得 (以今日購買力計算)",
-            f"NT$ {summary['first_year_disposable_income_real_value']:,.0f} /年"
-        )
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    col1.metric(
+        "預計退休時總資產 (以今日購買力計算)",
+        f"NT$ {summary['assets_at_retirement_real_value']:,.0f}"
+    )
+    col2.metric(
+        "退休後第一年可支配所得 (以今日購買力計算)",
+        f"NT$ {summary['first_year_disposable_income_real_value']:,.0f} /年"
+    )
 
-        st.markdown("---")
-        st.subheader("資產與負債長期走勢 (實質購買力)")
-        
-        fig = px.line(
-            projection_df,
-            x="age",
-            y=["year_end_assets_real_value", "year_end_liabilities_real_value"],
-            title="資產與負債模擬曲線 (經通膨調整)",
-            labels={"age": "年齡", "value": "金額 (TWD)", "variable": "項目"}
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("---")
+    st.subheader("資產與負債長期走勢 (實質購買力)")
+    
+    fig = px.line(
+        projection_df,
+        x="age",
+        y=["year_end_assets_real_value", "year_end_liabilities_real_value"],
+        title="資產與負債模擬曲線 (經通膨調整)",
+        labels={"age": "年齡", "value": "金額 (TWD)", "variable": "項目"}
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-else:
-    st.warning("請先完成上述所有步驟，以解鎖您的分析報告。")

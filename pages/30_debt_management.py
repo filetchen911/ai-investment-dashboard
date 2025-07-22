@@ -107,6 +107,10 @@ if not liabilities_df.empty:
     debt_categories = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
     existing_categories = [cat for cat in debt_categories if cat in liabilities_df['debt_type'].unique()]
 
+    # 初始化編輯狀態
+    if 'editing_debt_id' not in st.session_state:
+        st.session_state.editing_debt_id = None
+
     debt_tabs = st.tabs(existing_categories)
     
     for i, category in enumerate(existing_categories):
@@ -125,15 +129,25 @@ if not liabilities_df.empty:
                         sub_cols[2].metric("目前年利率", f"{row['interest_rate']:.2f}%")
 
                     with col2:
+                        # --- [v5.0.0 修正] ---
+                        # 編輯按鈕：將 session_state 的值設定為 doc_id
                         if st.button("✏️ 編輯", key=f"edit_{doc_id}", use_container_width=True):
-                            st.session_state['editing_debt_id'] = doc_id
+                            st.session_state.editing_debt_id = doc_id
+                            st.rerun()
+
+                        # 刪除按鈕 (邏輯不變)
                         if st.button("🗑️ 刪除", key=f"delete_{doc_id}", use_container_width=True):
+                            # 如果正在編輯的項目被刪除，也要清空狀態
+                            if st.session_state.editing_debt_id == doc_id:
+                                st.session_state.editing_debt_id = None
                             db.collection('users').document(user_id).collection('liabilities').document(doc_id).delete()
                             st.success(f"債務 {row['custom_name']} 已刪除！")
                             st.cache_data.clear()
                             st.rerun()
 
-                    if 'editing_debt_id' in st.session_state and st.session_state['editing_debt_id'] == doc_id:
+                    # --- [v5.0.0 修正] ---
+                    # 判斷條件：改為檢查 session_state 的值是否等於目前的 doc_id
+                    if st.session_state.editing_debt_id == doc_id:
                         with st.form(key=f"edit_form_{doc_id}"):
                             st.markdown("---")
                             st.subheader(f"正在編輯: {row['custom_name']}")
@@ -167,10 +181,13 @@ if not liabilities_df.empty:
                                 }
                                 db.collection('users').document(user_id).collection('liabilities').document(doc_id).update(update_data)
                                 st.success(f"債務「{new_custom_name}」已成功更新！")
-                                del st.session_state['editing_debt_id']
+                                
+                                # 儲存後：將 session_state 的值設為 None，以隱藏表單
+                                st.session_state.editing_debt_id = None 
                                 st.cache_data.clear()
                                 st.rerun()
                             
                             if btn_c2.form_submit_button("取消", type="secondary", use_container_width=True):
-                                del st.session_state['editing_debt_id']
+                                # 取消時：同樣將 session_state 的值設為 None
+                                st.session_state.editing_debt_id = None
                                 st.rerun()

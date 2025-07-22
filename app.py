@@ -49,6 +49,15 @@ def show_sidebar():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+
+        # --- [v5.0.0 修正] 手動建立側邊欄導覽 ---
+        st.sidebar.markdown("---")
+        st.sidebar.page_link("pages/10_asset_overview.py", label="資產總覽", icon="📊")
+        st.sidebar.page_link("pages/20_pension_overview.py", label="退休金總覽", icon="🏦")
+        st.sidebar.page_link("pages/30_debt_management.py", label="債務管理", icon="💳")
+        st.sidebar.page_link("pages/40_financial_dashboard.py", label="財務自由儀表板", icon="🏁")
+        st.sidebar.page_link("pages/50_ai_insights.py", label="AI 每日洞察", icon="💡")
+        st.sidebar.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")
         st.sidebar.markdown("---")
         st.sidebar.caption(f"App Version: {APP_VERSION}")
 
