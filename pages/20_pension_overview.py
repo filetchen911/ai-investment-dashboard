@@ -81,7 +81,7 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
                 'expected_return_rate': expected_return_rate,
                 'salary_growth_rate': salary_growth_rate,
                 'years_to_retirement': retirement_age - current_age,
-                'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 # --- [v5.0.0 修正] ---
                 # 將後端需要的 `insurance_seniority` 和 `pension_contributed_years` 一併傳入
                 'insurance_seniority': max(0, final_seniority),
