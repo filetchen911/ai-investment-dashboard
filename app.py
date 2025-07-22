@@ -10,7 +10,7 @@ from config import APP_VERSION
 def initialize_app():
     return init_firebase()
 
-db, firebase_config = initialize_app()
+#db, firebase_config = initialize_app()
 
 # --- 頁面配置 ---
 st.set_page_config(

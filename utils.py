@@ -148,6 +148,11 @@ def update_quotes_manually():
 def render_sidebar():
     if 'user_id' not in st.session_state:
         st.sidebar.header("歡迎使用")
+        
+        # --- [v5.0.0 修正] ---
+        # 在需要時，才初始化並取得 db 和 firebase_config
+        db, firebase_config = init_firebase()
+
         choice = st.sidebar.radio("請選擇操作", ["登入", "註冊"], horizontal=True)
         with st.sidebar.form("auth_form"):
             email = st.text_input("電子郵件")
@@ -184,7 +189,7 @@ def render_sidebar():
         st.sidebar.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")
         st.sidebar.markdown("---")
         st.sidebar.caption(f"App Version: {APP_VERSION}")
-        
+
 # --- 用戶認證函式 ---
 def signup_user(db, firebase_config, email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={firebase_config['apiKey']}"
