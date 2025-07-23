@@ -64,20 +64,20 @@ with st.expander("➕ 新增債務資料"):
 
         with c3:
             start_date = st.date_input("貸款起始日期", value=datetime.now())
-            
-            # --- [v5.0.0 修正] ---
-            # 宣告一個變數來接收手動輸入的值
-            manual_payment_input = 0
 
+            # --- [v5.0.0 建議] 智慧月付金輸入框 ---
+            monthly_payment_value = 0
+            help_text = "請根據您的貸款合約，輸入實際的月付金額。" # 預設註解
+                        
             if debt_type == "房屋貸款":
                 payments = calculate_mortgage_payments(total_amount, interest_rate, loan_period_years, grace_period_years)
-                st.markdown("---")
-                st.markdown("**自動計算月付金 (預估)**")
-                st.metric("寬限期 (只繳息)", f"$ {payments['grace_period_payment']:,.0f} /月")
-                st.metric("本息攤還期", f"$ {payments['regular_payment']:,.0f} /月")
-            else:
-                # 其他類型貸款，讓使用者手動輸入，並將值存入變數
-                manual_payment_input = st.number_input("每月還款金額", min_value=0, step=1000)
+                # 將自動計算結果作為預設值
+                monthly_payment_value = payments.get('regular_payment', 0)
+                # 更新註解
+                help_text = f"此為自動試算結果 (寬限期月付 ${payments['grace_period_payment']:,.0f})，可根據您的合約自行調整。"
+            
+            # 統一使用同一個輸入框，動態改變 value 和 help
+            manual_payment_input = st.number_input("每月還款金額", min_value=0, value=monthly_payment_value, step=1000, help=help_text)
 
         if st.form_submit_button("儲存這筆債務"):
             final_monthly_payment = 0
@@ -172,7 +172,20 @@ if not liabilities_df.empty:
                             with edit_c3:
                                 default_date = get_default_date(row.get('start_date'))
                                 new_start_date = st.date_input("貸款起始日期", value=default_date, key=f"start_date_{doc_id}")
-                                new_grace_period_years = st.number_input("寬限期年數 (無則填0)", min_value=0, max_value=10, value=row.get('grace_period_years', 0), key=f"grace_{doc_id}")
+                                # --- [v5.0.0 建議] 智慧月付金輸入框 (編輯模式) ---
+                                edit_monthly_payment_value = int(row.get('monthly_payment', 0))
+                                edit_help_text = "請根據您的貸款合約，輸入實際的月付金額。" # 預設註解
+
+                                if new_debt_type == "房屋貸款":
+                                    edit_payments = calculate_mortgage_payments(new_total_amount, new_interest_rate, new_loan_period_years, new_grace_period_years)
+                                    # 如果資料庫中沒有月付金，或與試算結果差異過大，才使用試算值作為建議
+                                    if edit_monthly_payment_value == 0:
+                                         edit_monthly_payment_value = edit_payments.get('regular_payment', 0)
+                                    # 更新註解
+                                    edit_help_text = f"自動試算結果約為 ${edit_payments['regular_payment']:,.0f} (寬限期 ${edit_payments['grace_period_payment']:,.0f})，可根據您的合約自行調整。"
+
+                                # 統一使用一個輸入框
+                                new_monthly_payment = st.number_input("每月還款金額", min_value=0, value=edit_monthly_payment_value, step=1000, help=edit_help_text, key=f"payment_{doc_id}")
 
                             btn_c1, btn_c2 = st.columns(2)
                             if btn_c1.form_submit_button("儲存變更", use_container_width=True):

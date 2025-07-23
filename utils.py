@@ -448,6 +448,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     enriched_assets_df = calculate_asset_metrics(raw_assets_df)
     current_assets = enriched_assets_df['市值_TWD'].sum() if not enriched_assets_df.empty else 0
 
+
     # 提取使用者假設
     return_rate = plan.get('expected_asset_return_rate', 7.0) / 100
     dividend_yield = plan.get('expected_dividend_yield', 2.5) / 100
@@ -457,10 +458,9 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     # 提取核心參數
     current_age = plan.get('current_age', 35)
     retirement_age = plan.get('retirement_age', 65)
-    
-    # 初始財務狀態
-    current_assets = assets_df['市值_TWD'].sum()
-    current_liabilities = liabilities_df['outstanding_balance'].sum()
+
+    # 初始負債狀態
+    current_liabilities = liabilities_df['outstanding_balance'].sum() if not liabilities_df.empty else 0
     
     # 取得退休金預估
     pension_results = get_full_retirement_analysis(plan)
