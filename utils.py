@@ -519,14 +519,23 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             current_assets -= net_withdrawal
             current_assets *= (1 + return_rate)
 
+        # --- [v5.0.0 修正] 確保輸出的欄位名稱與前端一致 ---
+        # 5. 通膨調整
+        # 儲存名目價值
         year_data["year_end_assets"] = current_assets
         year_data["year_end_liabilities"] = current_liabilities
         
-        # 5. 通膨調整
+        # 計算並儲存經通膨調整後的實質價值
         years_from_now = age - current_age
-        inflation_divisor = (1 + inflation_rate) ** years_from_now
+        # 使用 n+1 作為次方，以更精確地反映期末價值的貼現
+        inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
+        
+        # 使用前端 melt 函數所需要的、完全一致的欄位名稱
         year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
-        year_data["disposable_income_real_value"] = year_data["disposable_income"] / inflation_divisor
+        year_data["year_end_liabilities_real_value"] = current_liabilities / inflation_divisor
+        year_data["disposable_income_real_value"] = year_data.get("disposable_income", 0) / inflation_divisor
+        # --- [修正結束] ---        
+        
 
         projection_timeseries.append(year_data)
 
