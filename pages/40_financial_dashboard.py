@@ -126,12 +126,32 @@ if 'final_analysis_results' in st.session_state:
     st.markdown("---")
     st.subheader("資產與負債長期走勢 (實質購買力)")
     
-    fig = px.line(
-        projection_df,
-        x="age",
-        y=["year_end_assets_real_value", "year_end_liabilities_real_value"],
-        title="資產與負債模擬曲線 (經通膨調整)",
-        labels={"age": "年齡", "value": "金額 (TWD)", "variable": "項目"}
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # --- [v5.0.0 修正] ---
+    # 為了讓 Plotly 能正確繪製多條線，我們先將 DataFrame 轉換為長格式
+    if not projection_df.empty:
+        df_to_plot = projection_df.melt(
+            id_vars=['age'], 
+            value_vars=['year_end_assets_real_value', 'year_end_liabilities_real_value'],
+            var_name='項目', 
+            value_name='金額 (TWD)'
+        )
+        
+        # 建立一個更美觀的中文標籤對應
+        label_mapping = {
+            'year_end_assets_real_value': '總資產價值',
+            'year_end_liabilities_real_value': '總負債餘額'
+        }
+        df_to_plot['項目'] = df_to_plot['項目'].map(label_mapping)
+
+        fig = px.line(
+            df_to_plot,
+            x="age",
+            y="金額 (TWD)",
+            color="項目", # 使用轉換後的新欄位來區分顏色
+            title="資產與負債模擬曲線 (經通膨調整)",
+            labels={"age": "年齡", "金額 (TWD)": "金額 (TWD)", "項目": "財務項目"}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("無法產生圖表，因為沒有模擬數據。")
 
