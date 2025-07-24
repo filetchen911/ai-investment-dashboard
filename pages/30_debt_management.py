@@ -1,6 +1,6 @@
 # pages/30_debt_management.py
 # App Version: v5.0.0
-# Description: Fully refactored with a single, robust "debt_form" function for both add and edit modes.
+# Description: Fully refactored with a state-driven, single, robust "debt_form" function.
 
 import streamlit as st
 import pandas as pd
@@ -21,21 +21,16 @@ if 'user_id' not in st.session_state:
 user_id = st.session_state['user_id']
 db, _ = init_firebase()
 
-# --- [v5.0.0 最終重構] 統一的、智慧的債務表單 ---
+# --- [v5.0.0 最終重構] 統一的、狀態驅動的智慧債務表單 ---
 def debt_form(mode='add', existing_data=None):
     """
-    一個統一的債務表單，可用於新增(add)或編輯(edit)模式。
-    具備手動試算按鈕與統一的雙月付欄位。
+    一個統一的債務表單，其所有狀態都由 session_state 驅動。
     """
-    form_key = f"{mode}_debt_form"
-    
-    # 使用 session state 來儲存表單的動態值，確保刷新後狀態不遺失
     state_key = f"form_state_{mode}_{existing_data.get('doc_id', 'new') if existing_data else 'new'}"
     if state_key not in st.session_state:
         if mode == 'edit' and existing_data is not None:
             st.session_state[state_key] = existing_data
         else:
-            # 新增模式，預設值全部為 0 或空
             st.session_state[state_key] = {
                 "debt_type": "房屋貸款", "total_amount": 0, "outstanding_balance": 0,
                 "interest_rate": 0.0, "loan_period_years": 0, "grace_period_years": 0,
@@ -45,16 +40,13 @@ def debt_form(mode='add', existing_data=None):
     s = st.session_state[state_key]
 
     def _calculate_payments_callback():
-        # 自動試算月付金的回呼函數
         payments = calculate_mortgage_payments(s['total_amount'], s['interest_rate'], s['loan_period_years'], s['grace_period_years'])
         s['grace_period_payment'] = payments['grace_period_payment']
         s['monthly_payment'] = payments['regular_payment']
 
-    with st.form(key=form_key):
-        if mode == 'add':
-            st.subheader("新增一筆債務")
-        else:
-            st.subheader(f"正在編輯: {s.get('custom_name', '')}")
+    with st.form(key=f"{mode}_debt_form"):
+        if mode == 'add': st.subheader("新增一筆債務")
+        else: st.subheader(f"正在編輯: {s.get('custom_name', '')}")
 
         debt_types = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
         
@@ -73,17 +65,13 @@ def debt_form(mode='add', existing_data=None):
 
         st.markdown("---")
         
-        # 智慧月付金區塊
         col_calc_btn, col_grace, col_regular = st.columns([1, 2, 2])
-
         col_calc_btn.form_submit_button("🔄 自動試算月付金", on_click=_calculate_payments_callback)
-        
         s['grace_period_payment'] = col_grace.number_input("寬限期每月還款", min_value=0, value=int(s.get('grace_period_payment', 0)), step=1000)
         s['monthly_payment'] = col_regular.number_input("非寬限期每月還款", min_value=0, value=int(s.get('monthly_payment', 0)), step=1000)
         
         st.markdown("---")
 
-        # 表單提交按鈕
         btn_save, btn_cancel = st.columns(2)
         if btn_save.form_submit_button("儲存這筆債務" if mode == 'add' else "儲存變更", use_container_width=True):
             form_data = st.session_state[state_key].copy()
@@ -93,6 +81,7 @@ def debt_form(mode='add', existing_data=None):
                 form_data["created_at"] = firestore.SERVER_TIMESTAMP
                 db.collection('users').document(user_id).collection('liabilities').add(form_data)
                 st.success(f"債務「{form_data['custom_name'] or form_data['debt_type']}」已成功新增！")
+                st.session_state.show_add_form = False # 關閉開關
             else:
                 db.collection('users').document(user_id).collection('liabilities').document(existing_data['doc_id']).update(form_data)
                 st.success(f"債務「{form_data['custom_name']}」已成功更新！")
@@ -119,9 +108,17 @@ if not liabilities_df.empty:
     col2.metric("總月付金 (TWD)", f"${total_monthly_payment:,.0f}")
 else:
     st.info("您目前沒有建立任何債務資料。")
+    
+# --- [重構] 使用獨立的 session_state 來控制新增表單的顯示 ---
+if 'show_add_form' not in st.session_state:
+    st.session_state.show_add_form = False
 
-# 新增表單
-with st.expander("➕ 新增債務資料", expanded=not bool(st.session_state.get('editing_debt_id'))):
+def toggle_add_form():
+    st.session_state.show_add_form = not st.session_state.show_add_form
+
+st.button("➕ 新增債務資料", on_click=toggle_add_form)
+
+if st.session_state.show_add_form:
     debt_form(mode='add')
 
 st.markdown("---")
