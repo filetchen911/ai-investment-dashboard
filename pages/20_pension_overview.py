@@ -8,7 +8,7 @@ import plotly.express as px
 from datetime import datetime
 from firebase_admin import firestore
 # --- [v5.0.0 修正] 從 utils 引用所有核心函數 ---
-from utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, render_sidebar
+from utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, load_pension_data, render_sidebar
 
 render_sidebar()
 
@@ -27,6 +27,16 @@ db, _ = init_firebase()
 
 # --- 主體邏輯 ---
 st.info("在此頁面模擬您的勞保與勞退狀況。儲存後的結果，將被用於「財務自由儀表板」的最終整合分析。")
+
+# --- [v5.0.0 修正] ---
+# 載入使用者已儲存的計畫與上次的結果
+saved_plan, saved_results = load_pension_data(user_id)
+
+# 如果有從 Firestore 讀取到已儲存的結果，且 session_state 是空的，就將結果載入
+if saved_results and 'pension_plan_results' not in st.session_state:
+    st.session_state['pension_plan_inputs'] = saved_plan
+    st.session_state['pension_plan_results'] = saved_results
+# --- [修正結束] ---
 
 # 載入使用者已儲存的計畫
 saved_plan = load_retirement_plan(user_id)
@@ -98,9 +108,14 @@ with st.expander("✏️ 編輯或輸入您的退休金規劃參數", expanded=n
             st.session_state['pension_plan_results'] = analysis_results
 
             # 4. 將使用者輸入的規劃參數存入 Firestore
-            db.collection('users').document(user_id).set({'retirement_plan': plan_data}, merge=True)
-            st.success("您的退休金規劃已更新並完成分析！")
-            
+            # --- [v5.0.0 修正] 將分析結果也一併存入 Firestore ---
+            db.collection('users').document(user_id).set({
+                'retirement_plan': plan_data,
+                'pension_analysis_results': analysis_results # <-- 新增這一行
+            }, merge=True)
+            # --- [修正結束] ---
+
+            st.success("您的退休金規劃已更新並完成分析！")            
             # 5. 清除數據快取
             st.cache_data.clear()
 

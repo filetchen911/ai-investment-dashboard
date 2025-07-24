@@ -262,6 +262,19 @@ def load_latest_economic_data():
         st.error(f"讀取宏觀經濟數據時發生錯誤: {e}")
         return None
 
+
+@st.cache_data(ttl=300) # <--- 加上這一行
+def load_pension_data(uid):
+    """讀取使用者的退休規劃參數與上次的分析結果"""
+    db, _ = init_firebase()
+    user_doc = db.collection('users').document(uid).get()
+    if user_doc.exists:
+        data = user_doc.to_dict()
+        plan = data.get('retirement_plan', {})
+        results = data.get('pension_analysis_results', {})
+        return plan, results
+    return {}, {}
+    
 # --- [v5.0.0 新增] ---
 @st.cache_data(ttl=300)
 def load_retirement_plan(uid):
