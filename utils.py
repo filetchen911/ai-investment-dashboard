@@ -357,9 +357,10 @@ def calculate_asset_metrics(assets_df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def calculate_mortgage_payments(principal, annual_rate, years, grace_period_years=0):
+# [v5.0.0 最終修正] 重新命名函數，使其更通用
+def calculate_loan_payments(principal, annual_rate, years, grace_period_years=0):
     """
-    計算房貸在寬限期與本息攤還期的月付金。
+    計算定期貸款在寬限期與本息攤還期的月付金。
     """
     if annual_rate <= 0 or years <= 0 or principal <= 0:
         return {"grace_period_payment": 0, "regular_payment": 0}
@@ -367,12 +368,16 @@ def calculate_mortgage_payments(principal, annual_rate, years, grace_period_year
     monthly_rate = annual_rate / 100 / 12
     total_months = years * 12
     
-    # 計算寬限期（只繳利息）的月付金
-    grace_payment = principal * monthly_rate
+    grace_payment = 0
+    if grace_period_years > 0:
+        grace_payment = principal * monthly_rate
     
-    # 計算本息攤還期的月付金
-    # npf.pmt(利率, 期數, 現值)
-    regular_payment = -npf.pmt(monthly_rate, total_months - (grace_period_years * 12), principal)
+    repayment_months = total_months if grace_period_years == 0 else total_months - (grace_period_years * 12)
+    
+    if repayment_months <= 0:
+        return {"grace_period_payment": round(grace_payment), "regular_payment": 0}
+
+    regular_payment = -npf.pmt(monthly_rate, repayment_months, principal)
     
     return {
         "grace_period_payment": round(grace_payment),
