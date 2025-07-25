@@ -126,32 +126,39 @@ if 'final_analysis_results' in st.session_state:
     st.markdown("---")
     st.subheader("資產與負債長期走勢 (實質購買力)")
     
-    # --- [v5.0.0 修正] ---
-    # 為了讓 Plotly 能正確繪製多條線，我們先將 DataFrame 轉換為長格式
-    if not projection_df.empty:
-        df_to_plot = projection_df.melt(
-            id_vars=['age'], 
-            value_vars=['year_end_assets_real_value', 'year_end_liabilities_real_value'],
-            var_name='項目', 
-            value_name='金額 (TWD)'
-        )
-        
-        # 建立一個更美觀的中文標籤對應
-        label_mapping = {
-            'year_end_assets_real_value': '總資產價值',
-            'year_end_liabilities_real_value': '總負債餘額'
-        }
-        df_to_plot['項目'] = df_to_plot['項目'].map(label_mapping)
+    # 篩選出退休後的數據
+    retirement_df = projection_df[projection_df['age'] >= plan.get('retirement_age', 65)].copy()
 
-        fig = px.line(
-            df_to_plot,
-            x="age",
-            y="金額 (TWD)",
-            color="項目", # 使用轉換後的新欄位來區分顏色
-            title="資產與負債模擬曲線 (經通膨調整)",
-            labels={"age": "年齡", "金額 (TWD)": "金額 (TWD)", "項目": "財務項目"}
+    if not retirement_df.empty:
+        # 將數據轉換為長格式以便繪圖
+        cashflow_df = retirement_df.melt(
+            id_vars=['age', 'withdrawal_percentage'],
+            value_vars=['asset_income_real_value', 'pension_income_real_value'],
+            var_name='收入來源',
+            value_name='年度收入 (TWD)'
         )
-        st.plotly_chart(fig, use_container_width=True)
+        # 建立中文標籤
+        label_mapping = {
+            'asset_income_real_value': '資產被動收入',
+            'pension_income_real_value': '退休金收入'
+        }
+        cashflow_df['收入來源'] = cashflow_df['收入來源'].map(label_mapping)
+        
+        # 繪製堆疊面積圖
+        fig_cashflow = px.area(
+            cashflow_df,
+            x="age",
+            y="年度收入 (TWD)",
+            color="收入來源",
+            title="退休後年度總收入來源分析 (經通膨調整)",
+            labels={"age": "年齡", "年度收入 (TWD)": "年度總收入 (今日購買力)"},
+            custom_data=['withdrawal_percentage'] # 將提領率加入圖表數據中
+        )
+
+        # 在圖表的懸停提示中顯示提領率
+        fig_cashflow.update_traces(hovertemplate='年齡: %{x}<br>年度收入: %{y:,.0f}<br>當年資產提領率: %{customdata[0]:.2f}%')
+        
+        st.plotly_chart(fig_cashflow, use_container_width=True)
     else:
-        st.info("無法產生圖表，因為沒有模擬數據。")
+        st.info("無退休後數據可供分析。")
 

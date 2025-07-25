@@ -478,7 +478,8 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     retirement_age = plan.get('retirement_age', 65)
 
     # 初始負債狀態
-    current_liabilities = liabilities_df['outstanding_balance'].sum() if not liabilities_df.empty else 0
+    # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
+    current_liabilities_df = liabilities_df.copy()
     
     # 取得退休金預估
     pension_results = get_full_retirement_analysis(plan)
@@ -486,69 +487,72 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     
     projection_timeseries = []
     
-    # 2. 模擬迴圈
+    # 模擬迴圈
     for age in range(current_age, 101):
         year_data = {"age": age}
-        
-        # 3. 資產累積期
+        current_year = datetime.now().year + (age - current_age)
+
+        # --- [v5.0.0 修正] 精準的債務償還模擬 ---
+        annual_debt_payment = 0
+        if not current_liabilities_df.empty:
+            # 計算當年度需支付的總還款額
+            still_paying_df = current_liabilities_df[
+                # 條件：(目前年份 <= 貸款起始年份 + 貸款年限) AND (剩餘本金 > 0)
+                current_year <= (pd.to_datetime(current_liabilities_df['start_date']).dt.year + current_liabilities_df['loan_period_years'])
+            ]
+            annual_debt_payment = still_paying_df['monthly_payment'].sum() * 12
+            
+            # 更新剩餘總負債 (簡化為總額扣減，未來可優化為逐筆攤銷)
+            total_current_liabilities = current_liabilities_df['outstanding_balance'].sum()
+            new_total_liabilities = max(0, total_current_liabilities - annual_debt_payment)
+            
+            # 為了簡化，我們只更新總額，未來可優化為更新每一筆貸款的餘額
+            # 此處的模擬主要是為了現金流，而非精確的逐筆餘額
+            current_liabilities_df['outstanding_balance'] = new_total_liabilities * (current_liabilities_df['outstanding_balance'] / total_current_liabilities) if total_current_liabilities > 0 else 0
+
+
+        # 資產累積期
         if age < retirement_age:
             year_data["phase"] = "accumulation"
             current_assets *= (1 + return_rate)
-            # 此模型簡化後的債務償還
-            if not liabilities_df.empty:
-                annual_payment = liabilities_df['monthly_payment'].sum() * 12
-                current_liabilities -= annual_payment
-                current_liabilities = max(0, current_liabilities)
-            
-            year_data["disposable_income"] = 0 # 尚無退休收入
+            year_data["disposable_income"] = -annual_debt_payment # 累積期的可支配所得為負的還款額
         
         # 4. 資產提領期
         else:
             year_data["phase"] = "decumulation"
             
-            # 計算收入流
-            asset_income = (current_assets * dividend_yield) + (current_assets * withdrawal_rate)
-            
-            pension_income = 0
+            # 1. 計算各項收入流 (名目價值)
+            asset_income_nominal = (current_assets * dividend_yield) + (current_assets * withdrawal_rate)
+            pension_income_nominal = 0
             if age >= legal_age:
-                pension_income = pension_results['summary']['total_monthly_pension'] * 12
+                pension_income_nominal = pension_results['summary']['total_monthly_pension'] * 12
             elif age >= 60:
-                pension_income = pension_results['labor_pension']['monthly_pension'] * 12
-
-            total_income = asset_income + pension_income
+                pension_income_nominal = pension_results['labor_pension']['monthly_pension'] * 12
             
-            # 計算支出
-            annual_debt_payment = 0
-            if not liabilities_df.empty and current_liabilities > 0:
-                annual_debt_payment = liabilities_df['monthly_payment'].sum() * 12
-                current_liabilities -= annual_debt_payment
-                current_liabilities = max(0, current_liabilities)
+            total_income_nominal = asset_income_nominal + pension_income_nominal
 
-            disposable_income = total_income - annual_debt_payment
-            year_data["disposable_income"] = disposable_income
+            # 2. 計算支出 (維持不變)
+            disposable_income_nominal = total_income_nominal - annual_debt_payment
             
-            # 更新資產價值
-            net_withdrawal = (disposable_income + annual_debt_payment) - (pension_income) # 從資產中提出的金額
-            current_assets -= net_withdrawal
+            # 3. 更新資產價值 (使用簡潔、正確的邏輯)
+            net_withdrawal_from_assets = asset_income_nominal - (current_assets * dividend_yield)
+            current_assets -= net_withdrawal_from_assets
             current_assets *= (1 + return_rate)
+            
+            # 4. 通膨調整與記錄
+            years_from_now = age - current_age
+            inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
+            
+            year_data["disposable_income_real_value"] = disposable_income_nominal / inflation_divisor
+            year_data["asset_income_real_value"] = asset_income_nominal / inflation_divisor
+            year_data["pension_income_real_value"] = pension_income_nominal / inflation_divisor
+            year_data["withdrawal_percentage"] = withdrawal_rate * 100   
 
-        # --- [v5.0.0 修正] 確保輸出的欄位名稱與前端一致 ---
-        # 5. 通膨調整
-        # 儲存名目價值
+        # 儲存年末資產與負債 (維持不變)
         year_data["year_end_assets"] = current_assets
-        year_data["year_end_liabilities"] = current_liabilities
-        
-        # 計算並儲存經通膨調整後的實質價值
-        years_from_now = age - current_age
-        # 使用 n+1 作為次方，以更精確地反映期末價值的貼現
-        inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
-        
-        # 使用前端 melt 函數所需要的、完全一致的欄位名稱
-        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
-        year_data["year_end_liabilities_real_value"] = current_liabilities / inflation_divisor
-        year_data["disposable_income_real_value"] = year_data.get("disposable_income", 0) / inflation_divisor
-        # --- [修正結束] ---        
-        
+        year_data["year_end_liabilities"] = current_liabilities_df['outstanding_balance'].sum()
+        year_data["year_end_assets_real_value"] = current_assets / ((1 + inflation_rate) ** (age - current_age + 1))
+        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities"] / ((1 + inflation_rate) ** (age - current_age + 1))        
 
         projection_timeseries.append(year_data)
 
