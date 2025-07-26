@@ -486,7 +486,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     # 取得退休金預估
     pension_results = get_full_retirement_analysis(plan)
     legal_age = pension_results.get('labor_insurance', {}).get('legal_age', 65)
-    
+
     projection_timeseries = []
     
     # 模擬迴圈
@@ -512,14 +512,19 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             # 此處的模擬主要是為了現金流，而非精確的逐筆餘額
             current_liabilities_df['outstanding_balance'] = new_total_liabilities * (current_liabilities_df['outstanding_balance'] / total_current_liabilities) if total_current_liabilities > 0 else 0
 
+        # --- [v5.0.0 最終修正] ---
         # 資產累積期
         if age < retirement_age:
             year_data["phase"] = "accumulation"
-            # [v5.0.0 新增] 將年度新增投資加入計算
-            current_assets = (current_assets + annual_investment) * (1 + return_rate)
-            current_assets -= annual_debt_payment # 扣除負債還款
             
-            year_data["disposable_income_nominal"] = -annual_debt_payment
+            # 1. 計算投資增長：(年初資產) * 報酬率
+            investment_return = current_assets * return_rate
+            
+            # 2. 年末資產 = 年初資產 + 投資增長 + 年度新增投資
+            current_assets += investment_return + annual_investment
+            
+            # 在此階段，假設負債由薪資等非投資收入支付，不影響資產累積
+            year_data["disposable_income_nominal"] = -annual_debt_payment # 此階段的可支配所得為負的還款額
             year_data["asset_income_nominal"] = 0
             year_data["pension_income_nominal"] = 0
         
@@ -527,6 +532,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         else:
             year_data["phase"] = "decumulation"
             
+            # 在退休後，負債還款和生活開銷都必須從總收入(含資產提領)中支出
             asset_income_nominal = (current_assets * dividend_yield) + (current_assets * withdrawal_rate)
             pension_income_nominal = 0
             if age >= legal_age:
@@ -537,27 +543,23 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             total_income_nominal = asset_income_nominal + pension_income_nominal
             disposable_income_nominal = total_income_nominal - annual_debt_payment
             
-            net_withdrawal_from_assets = asset_income_nominal - (current_assets * dividend_yield)
+            # 更新資產價值
+            # 淨流出 = (總收入 - 退休金收入) - (總收入 - 可支配所得)
+            # 簡化為：淨流出 = (資產被動收入) - (負債還款)
+            # 修正：資產淨流出 = 總提領金額
+            net_withdrawal_from_assets = current_assets * withdrawal_rate
             current_assets -= net_withdrawal_from_assets
-            current_assets *= (1 + return_rate)
+            current_assets *= (1 + return_rate) # 剩餘資產繼續增長
             
             year_data["disposable_income_nominal"] = disposable_income_nominal
             year_data["asset_income_nominal"] = asset_income_nominal
             year_data["pension_income_nominal"] = pension_income_nominal
             year_data["withdrawal_percentage"] = withdrawal_rate * 100
+        # --- [修正結束] ---
 
-        # 通膨調整與最終記錄
-        years_from_now = age - current_age
-        inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
-        
-        year_data["year_end_assets_nominal"] = current_assets
-        year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
-        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
-        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
-        
         for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
              year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
-        
+
         projection_timeseries.append(year_data)
 
     # 最終輸出模型 (擴充 summary)
