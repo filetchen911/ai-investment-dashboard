@@ -716,51 +716,48 @@ class RetirementCalculator:
             dict: 包含是否可月領、預估總額與月領金額等資訊
         """
         
-        # 輸入驗證
+        # --- [v5.0.0 修正] ---
+        # 勞退的法定請領年齡固定為 60 歲
+        pension_claim_age = 60
+        
+        # 輸入驗證 (移除對 retirement_age < 60 的錯誤阻擋)
         validation_errors = self.validate_inputs(
             monthly_salary=monthly_salary,
             years_to_retirement=years_to_retirement,
             employer_rate=employer_rate,
             employee_rate=employee_rate,
-            current_contributed_years=current_contributed_years,
-            retirement_age=retirement_age
+            current_contributed_years=current_contributed_years
         )
         
         result = {
-            'eligible_age': 60,
+            'eligible_age': pension_claim_age,
             'can_monthly_payment': False,
             'final_amount': 0,
             'lump_sum': 0,
             'monthly_pension': 0,
             'monthly_years': 0,
-            'real_value': 0,  # 考慮通膨的實質價值
+            'real_value': 0,
             'validation_errors': validation_errors,
-            'contribution_details': []  # 提繳明細
+            'contribution_details': []
         }
 
         if validation_errors:
-            if verbose:
-                for error in validation_errors:
-                    print(f"❌ {error}")
             return result
 
         if years_to_retirement < 0 or monthly_salary <= 0:
             return result
 
-        # 使用政府保證最低收益率
         actual_rate = max(annual_return_rate, self.min_guaranteed_return)
         total_contribution_rate = (employer_rate + employee_rate) / 100
         future_value = current_principal
 
-        # 逐年計算，考慮薪資成長和提繳工資上限
+        # 階段一：計算到「退休日」為止的本金與收益累積
         contribution_details = []
         for year in range(1, years_to_retirement + 1):
             future_salary = monthly_salary * ((1 + salary_growth_rate / 100) ** (year - 1))
-            # 套用勞退提繳工資上限
             capped_salary = min(future_salary, self.max_labor_pension_salary)
             annual_contribution = capped_salary * total_contribution_rate * 12
             
-            # 記錄每年提繳詳情
             contribution_details.append({
                 'year': year,
                 'monthly_salary': future_salary,
@@ -771,22 +768,34 @@ class RetirementCalculator:
             })
             
             future_value = future_value * (1 + actual_rate / 100) + annual_contribution
-
-        result['final_amount'] = result['lump_sum'] = future_value
+        
+        result['final_amount'] = future_value # 這是退休當下的帳戶價值
         result['contribution_details'] = contribution_details
         
-        # 計算實質購買力
-        result['real_value'] = self.adjust_for_inflation(future_value, years_to_retirement)
+        # --- [v5.0.0 修正] ---
+        # 階段二：如果退休年齡早於請領年齡，模擬後續幾年的純投資收益
+        if retirement_age < pension_claim_age:
+            years_of_growth_only = pension_claim_age - retirement_age
+            for year in range(years_of_growth_only):
+                future_value *= (1 + actual_rate / 100)
+        
+        # 最終用於計算月退俸的，是「請領日」當下的帳戶價值
+        value_at_claim_age = future_value
+        result['lump_sum'] = value_at_claim_age # 一次領的金額也是以請領日為準
+
+        # 計算實質購買力 (以請領日的價值計算)
+        years_to_claim_age = years_to_retirement + max(0, pension_claim_age - retirement_age)
+        result['real_value'] = self.adjust_for_inflation(value_at_claim_age, years_to_claim_age)
 
         # 判斷月領資格：年資≥15年 且 年滿60歲
         total_years = current_contributed_years + years_to_retirement
-        if total_years >= 15 and retirement_age >= 60:
+        if total_years >= 15: # 請領年齡必定為60歲，故只需判斷年資
             result['can_monthly_payment'] = True
-            factor = self.get_annuity_factor(retirement_age)
-            monthly_pension = future_value / factor / 12
+            factor = self.get_annuity_factor(pension_claim_age) # 使用 60 歲的因子
+            monthly_pension = value_at_claim_age / factor / 12
             result['monthly_pension'] = monthly_pension
             result['monthly_years'] = factor
-
+"""
         if verbose:
             print("\n📘【勞退個人專戶計算結果】")
             print(f"目前本金: ${current_principal:,.0f}，月薪: ${monthly_salary:,.0f}")
@@ -806,7 +815,7 @@ class RetirementCalculator:
                 if retirement_age < 60:
                     reasons.append(f"未滿60歲")
                 print(f"⚠️ 未達月領資格：{', '.join(reasons)}，僅可一次領取")
-
+"""
         return result
 
     def calculate_labor_insurance_pension(self, avg_salary: float, insurance_years: int, 
