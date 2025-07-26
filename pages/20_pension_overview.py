@@ -144,11 +144,32 @@ if 'pension_plan_results' in st.session_state:
     st.markdown("---")
     st.subheader("📊 您的退休金流總覽 (預估值)")
     
-    if retirement_age < legal_age:
-        col1, col2 = st.columns(2)
-        col1.metric(label=f"{retirement_age} ~ {legal_age - 1} 歲 (僅勞退)", value=f"NT$ {pension_monthly:,.0f} /月")
-        col2.metric(label=f"{legal_age} 歲起 (勞退+勞保)", value=f"NT$ {total_at_legal_age:,.0f} /月",
+    # --- [v5.0.0 修正] 增加多階段退休顯示邏輯 ---
+    pension_claim_age = 60 # 勞退法定請領年齡
+
+    # 情況一：退休年齡早於勞退請領年齡 (例如 55 歲退休)
+    if retirement_age < pension_claim_age:
+        st.markdown(f"#### 三階段退休現金流")
+        c1, c2, c3 = st.columns(3)
+        # 第一階段：純等待期
+        c1.metric(label=f"{retirement_age} ~ {pension_claim_age - 1} 歲 (純等待期)", value="NT$ 0 /月", help="此期間尚未達到法定請領年齡，無任何政府退休金收入。")
+        # 第二階段：僅領勞退
+        c2.metric(label=f"{pension_claim_age} ~ {legal_age - 1} 歲 (僅勞退)", value=f"NT$ {pension_monthly:,.0f} /月")
+        # 第三階段：勞退+勞保
+        c3.metric(label=f"{legal_age} 歲起 (勞退+勞保)", value=f"NT$ {total_at_legal_age:,.0f} /月",
                       help=f"勞退 ${pension_monthly:,.0f} + 勞保 ${insurance_monthly:,.0f}")
+    
+    # 情況二：退休年齡介於勞退與勞保請領年齡之間 (例如 62 歲退休)
+    elif pension_claim_age <= retirement_age < legal_age:
+        st.markdown(f"#### 兩階段退休現金流")
+        c1, c2 = st.columns(2)
+        # 第一階段：僅領勞退
+        c1.metric(label=f"{retirement_age} ~ {legal_age - 1} 歲 (僅勞退)", value=f"NT$ {pension_monthly:,.0f} /月")
+        # 第二階段：勞退+勞保
+        c2.metric(label=f"{legal_age} 歲起 (勞退+勞保)", value=f"NT$ {total_at_legal_age:,.0f} /月",
+                      help=f"勞退 ${pension_monthly:,.0f} + 勞保 ${insurance_monthly:,.0f}")
+
+    # 情況三：退休年齡達到或超過所有法定請領年齡
     else:
         st.metric(label=f"預計 {retirement_age} 歲退休後，每月總退休金 (勞退+勞保)", value=f"NT$ {total_at_legal_age:,.0f}")
 
