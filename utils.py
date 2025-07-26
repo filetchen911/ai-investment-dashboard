@@ -795,27 +795,7 @@ class RetirementCalculator:
             monthly_pension = value_at_claim_age / factor / 12
             result['monthly_pension'] = monthly_pension
             result['monthly_years'] = factor
-"""
-        if verbose:
-            print("\n📘【勞退個人專戶計算結果】")
-            print(f"目前本金: ${current_principal:,.0f}，月薪: ${monthly_salary:,.0f}")
-            print(f"薪資年成長率: {salary_growth_rate:.1f}%，實際報酬率: {actual_rate:.2f}%")
-            if monthly_salary > self.max_labor_pension_salary:
-                print(f"⚠️ 月薪超過提繳工資上限 ${self.max_labor_pension_salary:,.0f}，以上限計算")
-            print(f"退休時帳戶預估金額: ${future_value:,.0f}")
-            print(f"考慮通膨後實質價值: ${result['real_value']:,.0f}")
-            
-            if result['can_monthly_payment']:
-                print(f"✅ 符合月領資格（年資 {total_years} 年 ≥ 15年，年齡 {retirement_age} 歲 ≥ 60歲）")
-                print(f"👉 預估月領金額: ${result['monthly_pension']:,.0f}（約可支應 {factor:.1f} 年的退休期間）")
-            else:
-                reasons = []
-                if total_years < 15:
-                    reasons.append(f"年資不足（{total_years} < 15年）")
-                if retirement_age < 60:
-                    reasons.append(f"未滿60歲")
-                print(f"⚠️ 未達月領資格：{', '.join(reasons)}，僅可一次領取")
-"""
+
         return result
 
     def calculate_labor_insurance_pension(self, avg_salary: float, insurance_years: int, 
