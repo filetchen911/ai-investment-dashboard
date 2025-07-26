@@ -472,7 +472,13 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     withdrawal_rate = plan.get('retirement_withdrawal_rate', 4.0) / 100
     inflation_rate = plan.get('inflation_rate', 2.0) / 100
     annual_investment = plan.get('annual_investment', 0) # <-- [v5.0.0 新增]
-    
+
+    # --- [v5.0.0 修正] ---
+    # 提取核心參數，確保變數被定義
+    current_age = plan.get('current_age', 35)
+    retirement_age = plan.get('retirement_age', 65)
+    # --- [修正結束] ---
+        
     # 初始負債狀態
     # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
     current_liabilities_df = liabilities_df.copy()

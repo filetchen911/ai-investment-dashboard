@@ -79,13 +79,14 @@ usd_to_twd_rate = get_exchange_rate("USD", "TWD")
 if assets_df.empty:
     st.info("您目前沒有資產。")
 else:
+    # 1. 直接從 utils 獲取最準確的即時匯率
+    usd_to_twd_rate = get_exchange_rate("USD", "TWD")    
     # 從重構後的 df 中，直接提取需要顯示的總覽數據
     # 這些計算現在由 calculate_asset_metrics 保證與其他模組一致
     total_value_twd = df['市值_TWD'].sum()
 
     # 為了計算總損益，我們需要先計算台幣計價的總成本
     # (這部分邏輯也由 calculate_asset_metrics 處理，但總計需要在頁面完成)
-    usd_to_twd_rate = df['市值_TWD'].sum() / df['市值'].sum() if df['市值'].sum() != 0 and 'USD' in df['幣別'].unique() else 1.0
     total_cost_twd = df.apply(lambda r: r['成本'] * usd_to_twd_rate if r['幣別'] in ['USD', 'USDT'] else r['成本'], axis=1).sum()
     total_pnl_twd = total_value_twd - total_cost_twd
     total_pnl_ratio = (total_pnl_twd / total_cost_twd * 100) if total_cost_twd != 0 else 0
