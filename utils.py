@@ -557,6 +557,17 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["withdrawal_percentage"] = withdrawal_rate * 100
         # --- [修正結束] ---
 
+        # --- [v5.0.0 最終修正] ---
+        # 1. 將通膨調整邏輯移至迴圈主體，確保每年都會執行
+        years_from_now = age - current_age
+        inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
+
+        # 2. 儲存年末資產與負債 (名目與實質價值)
+        year_data["year_end_assets_nominal"] = current_assets
+        year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
+        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
+        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
+        
         for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
              year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
 
