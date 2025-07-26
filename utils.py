@@ -457,26 +457,22 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
     return final_results
 
 def get_holistic_financial_projection(user_id: str) -> Dict:
-    # 1. 初始化
+    # 1. 初始化 (維持不變)
     plan = load_retirement_plan(user_id)
-    raw_assets_df = load_user_assets_from_firestore(user_id) # 讀取原始數據
+    raw_assets_df = load_user_assets_from_firestore(user_id)
     liabilities_df = load_user_liabilities(user_id)
 
-    # 2. 呼叫中心函數計算初始總資產
+    # 2. 計算初始總資產 (維持不變)
     enriched_assets_df = calculate_asset_metrics(raw_assets_df)
     current_assets = enriched_assets_df['市值_TWD'].sum() if not enriched_assets_df.empty else 0
-
-
-    # 提取使用者假設
-    return_rate = plan.get('expected_asset_return_rate', 7.0) / 100
+    
+    # 提取使用者假設 (新增 annual_investment)
+    return_rate = plan.get('asset_return_rate', 7.0) / 100
     dividend_yield = plan.get('expected_dividend_yield', 2.5) / 100
     withdrawal_rate = plan.get('retirement_withdrawal_rate', 4.0) / 100
     inflation_rate = plan.get('inflation_rate', 2.0) / 100
+    annual_investment = plan.get('annual_investment', 0) # <-- [v5.0.0 新增]
     
-    # 提取核心參數
-    current_age = plan.get('current_age', 35)
-    retirement_age = plan.get('retirement_age', 65)
-
     # 初始負債狀態
     # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
     current_liabilities_df = liabilities_df.copy()
@@ -492,7 +488,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         year_data = {"age": age}
         current_year = datetime.now().year + (age - current_age)
 
-        # --- [v5.0.0 修正] 精準的債務償還模擬 ---
+        # 計算當年度的負債還款總額 (維持不變)
         annual_debt_payment = 0
         if not current_liabilities_df.empty:
             # 計算當年度需支付的總還款額
@@ -510,18 +506,21 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             # 此處的模擬主要是為了現金流，而非精確的逐筆餘額
             current_liabilities_df['outstanding_balance'] = new_total_liabilities * (current_liabilities_df['outstanding_balance'] / total_current_liabilities) if total_current_liabilities > 0 else 0
 
-
         # 資產累積期
         if age < retirement_age:
             year_data["phase"] = "accumulation"
-            current_assets *= (1 + return_rate)
-            year_data["disposable_income"] = -annual_debt_payment # 累積期的可支配所得為負的還款額
+            # [v5.0.0 新增] 將年度新增投資加入計算
+            current_assets = (current_assets + annual_investment) * (1 + return_rate)
+            current_assets -= annual_debt_payment # 扣除負債還款
+            
+            year_data["disposable_income_nominal"] = -annual_debt_payment
+            year_data["asset_income_nominal"] = 0
+            year_data["pension_income_nominal"] = 0
         
-        # 4. 資產提領期
+        # 資產提領期
         else:
             year_data["phase"] = "decumulation"
             
-            # 1. 計算各項收入流 (名目價值)
             asset_income_nominal = (current_assets * dividend_yield) + (current_assets * withdrawal_rate)
             pension_income_nominal = 0
             if age >= legal_age:
@@ -530,35 +529,36 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
                 pension_income_nominal = pension_results['labor_pension']['monthly_pension'] * 12
             
             total_income_nominal = asset_income_nominal + pension_income_nominal
-
-            # 2. 計算支出 (維持不變)
             disposable_income_nominal = total_income_nominal - annual_debt_payment
             
-            # 3. 更新資產價值 (使用簡潔、正確的邏輯)
             net_withdrawal_from_assets = asset_income_nominal - (current_assets * dividend_yield)
             current_assets -= net_withdrawal_from_assets
             current_assets *= (1 + return_rate)
             
-            # 4. 通膨調整與記錄
-            years_from_now = age - current_age
-            inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
-            
-            year_data["disposable_income_real_value"] = disposable_income_nominal / inflation_divisor
-            year_data["asset_income_real_value"] = asset_income_nominal / inflation_divisor
-            year_data["pension_income_real_value"] = pension_income_nominal / inflation_divisor
-            year_data["withdrawal_percentage"] = withdrawal_rate * 100   
+            year_data["disposable_income_nominal"] = disposable_income_nominal
+            year_data["asset_income_nominal"] = asset_income_nominal
+            year_data["pension_income_nominal"] = pension_income_nominal
+            year_data["withdrawal_percentage"] = withdrawal_rate * 100
 
-        # 儲存年末資產與負債 (維持不變)
-        year_data["year_end_assets"] = current_assets
-        year_data["year_end_liabilities"] = current_liabilities_df['outstanding_balance'].sum()
-        year_data["year_end_assets_real_value"] = current_assets / ((1 + inflation_rate) ** (age - current_age + 1))
-        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities"] / ((1 + inflation_rate) ** (age - current_age + 1))        
-
+        # 通膨調整與最終記錄
+        years_from_now = age - current_age
+        inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
+        
+        year_data["year_end_assets_nominal"] = current_assets
+        year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
+        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
+        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
+        
+        for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
+             year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
+        
         projection_timeseries.append(year_data)
 
-    # 6. 最終輸出模型
+    # 最終輸出模型 (擴充 summary)
     summary = {
+        "assets_at_retirement_nominal": next((y["year_end_assets_nominal"] for y in projection_timeseries if y["age"] == retirement_age), 0),
         "assets_at_retirement_real_value": next((y["year_end_assets_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0),
+        "first_year_disposable_income_nominal": next((y["disposable_income_nominal"] for y in projection_timeseries if y["age"] == retirement_age), 0),
         "first_year_disposable_income_real_value": next((y["disposable_income_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0)
     }
     

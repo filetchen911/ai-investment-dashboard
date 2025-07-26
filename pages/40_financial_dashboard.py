@@ -1,6 +1,6 @@
 # pages/40_financial_dashboard.py
 # App Version: v5.0.0
-# Description: Refactored to allow analysis even if some data modules are empty.
+# Description: Final enhanced version with multiple charts, toggles, and detailed metrics.
 
 import streamlit as st
 import pandas as pd
@@ -72,19 +72,15 @@ st.subheader("🚀 您的整合性財務分析報告")
 # --- [v5.0.0] 全局財務假設輸入表單 ---
 with st.form("global_assumptions_form"):
     st.markdown("#### 請輸入您的全局財務假設")
-    
-    # 讀取已儲存的全局假設
     plan = load_retirement_plan(user_id)
     
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        asset_return_rate = st.slider("預期總資產年化報酬率 (%)", 0.0, 15.0, plan.get('asset_return_rate', 7.0), 0.5)
-    with c2:
-        dividend_yield = st.slider("預期年化股息率 (%)", 0.0, 10.0, plan.get('dividend_yield', 2.5), 0.5)
-    with c3:
-        withdrawal_rate = st.slider("退休後資產提領率 (%)", 1.0, 10.0, plan.get('withdrawal_rate', 4.0), 0.5)
-    with c4:
-        inflation_rate = st.slider("預估長期平均通膨率 (%)", 0.0, 5.0, plan.get('inflation_rate', 2.0), 0.1)
+    c1, c2, c3, c4, c5 = st.columns(5)
+    # [v5.0.0 新增]
+    annual_investment = c1.number_input("退休前每年可增加的投資金額", min_value=0, value=plan.get('annual_investment', 0), step=10000)
+    asset_return_rate = c2.slider("預期總資產年化報酬率 (%)", 0.0, 15.0, plan.get('asset_return_rate', 7.0), 0.5)
+    dividend_yield = c3.slider("預期年化股息率 (%)", 0.0, 10.0, plan.get('dividend_yield', 2.5), 0.5)
+    withdrawal_rate = c4.slider("退休後資產提領率 (%)", 1.0, 10.0, plan.get('withdrawal_rate', 4.0), 0.5)
+    inflation_rate = c5.slider("預估長期平均通膨率 (%)", 0.0, 5.0, plan.get('inflation_rate', 2.0), 0.1)
     
     submitted = st.form_submit_button("開始最終模擬", use_container_width=True)
 
@@ -113,23 +109,30 @@ if 'final_analysis_results' in st.session_state:
     projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
 
     st.markdown("---")
+    # [v5.0.0 建議 1] 擴充為 2x2 指標矩陣
+    st.subheader("退休關鍵指標")
     col1, col2 = st.columns(2)
-    col1.metric(
-        "預計退休時總資產 (以今日購買力計算)",
-        f"NT$ {summary['assets_at_retirement_real_value']:,.0f}"
-    )
-    col2.metric(
-        "退休後第一年可支配所得 (以今日購買力計算)",
-        f"NT$ {summary['first_year_disposable_income_real_value']:,.0f} /年"
-    )
+    with col1:
+        st.metric("預計退休時總資產 (名目價值)", f"NT$ {summary['assets_at_retirement_nominal']:,.0f}")
+        st.metric("預計退休時總資產 (今日購買力)", f"NT$ {summary['assets_at_retirement_real_value']:,.0f}")
+    with col2:
+        st.metric("退休後第一年可支配所得 (名目價值)", f"NT$ {summary['first_year_disposable_income_nominal']:,.0f} /年")
+        st.metric("退休後第一年可支配所得 (今日購買力)", f"NT$ {summary['first_year_disposable_income_real_value']:,.0f} /年")
 
+    # [v5.0.0 建議 3] 資產與負債圖表 (含切換)
     st.markdown("---")
-    st.subheader("資產與負債長期走勢 (實質購買力)")
-    
-    # 篩選出退休後的數據
-    retirement_df = projection_df[projection_df['age'] >= plan.get('retirement_age', 65)].copy()
+    st.subheader("資產與負債長期走勢")
+    chart_type_asset = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="asset_chart_type", horizontal=True)
+    y_asset_vars = ['year_end_assets_real_value', 'year_end_liabilities_real_value'] if chart_type_asset == '實質購買力' else ['year_end_assets_nominal', 'year_end_liabilities_nominal']
+    # ... (繪製資產負債圖表的邏輯，使用 y_asset_vars) ...
 
+    # [v5.0.0 建議 4 & 5] 新增現金流與可支配所得圖表
+    st.markdown("---")
+    st.subheader("退休後年度現金流分析")
+    
+    retirement_df = projection_df[projection_df['age'] >= plan.get('retirement_age', 65)].copy()
     if not retirement_df.empty:
+        # 圖表一：收入來源堆疊面積圖 (維持不變)
         # 將數據轉換為長格式以便繪圖
         cashflow_df = retirement_df.melt(
             id_vars=['age', 'withdrawal_percentage'],
@@ -159,6 +162,28 @@ if 'final_analysis_results' in st.session_state:
         fig_cashflow.update_traces(hovertemplate='年齡: %{x}<br>年度收入: %{y:,.0f}<br>當年資產提領率: %{customdata[0]:.2f}%')
         
         st.plotly_chart(fig_cashflow, use_container_width=True)
+
+        # 圖表二：可支配所得長條圖
+        chart_type_income = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="income_chart_type", horizontal=True)
+        y_income_var = 'disposable_income_real_value' if chart_type_income == '實質購買力' else 'disposable_income_nominal'
+        
+        fig_disposable = px.bar(
+            retirement_df, x="age", y=y_income_var,
+            title="年度可支配所得趨勢 (已扣除負債支出)",
+            labels={"age": "年齡", y_income_var: "年度可支配所得 (TWD)"},
+            custom_data=[
+                'asset_income_nominal', 'pension_income_nominal',
+                'disposable_income_nominal', 'withdrawal_percentage'
+            ]
+        )
+        fig_disposable.update_traces(
+            hovertemplate="<b>年齡: %{x}</b><br><br>" +
+                          "年度總收入: %{customdata[0]:,.0f} (資產) + %{customdata[1]:,.0f} (退休金)<br>" +
+                          "<b>年度可支配所得: %{y:,.0f}</b><br>" +
+                          "每月可支配所得: %{customdata[2]:,.0f} / 12<br>" +
+                          "當年資產提領率: %{customdata[3]:.2f}%<br>" +
+                          "<extra></extra>" # 隱藏多餘的 trace name
+        )
+        st.plotly_chart(fig_disposable, use_container_width=True)
     else:
         st.info("無退休後數據可供分析。")
-
