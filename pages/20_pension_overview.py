@@ -8,7 +8,7 @@ import plotly.express as px
 from datetime import datetime
 from firebase_admin import firestore
 # --- [v5.0.0 修正] 從 utils 引用所有核心函數 ---
-from utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, load_pension_data, render_sidebar
+from utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, load_pension_data, render_sidebar, RetirementCalculator
 
 render_sidebar()
 
@@ -27,6 +27,13 @@ db, _ = init_firebase()
 
 # --- 主體邏輯 ---
 st.info("在此頁面模擬您的勞保與勞退狀況。儲存後的結果，將被用於「財務自由儀表板」的最終整合分析。")
+
+# --- [v5.0.0 數據更新] ---
+# 建立一個計算器實例，以讀取其內部的日期屬性
+calculator_instance = RetirementCalculator()
+publish_date = calculator_instance.annuity_data_publish_date
+st.caption(f"年金現值因子採用勞動部勞工保險局 **{publish_date}** 公告之最新數據進行試算，確保結果貼近現實。")
+# --- [數據更新結束] ---
 
 # --- [v5.0.0 修正] ---
 # 載入使用者已儲存的計畫與上次的結果
