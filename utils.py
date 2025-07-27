@@ -473,6 +473,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     inflation_rate = plan.get('inflation_rate', 2.0) / 100
     annual_investment = plan.get('annual_investment', 0) # <-- [v5.0.0 新增]
 
+    print(f"--- [DEBUG in utils.py] 讀取到的 annual_investment: {annual_investment} ---")
     # --- [v5.0.0 修正] ---
     # 提取核心參數，確保變數被定義
     current_age = plan.get('current_age', 35)

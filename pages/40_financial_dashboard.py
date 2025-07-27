@@ -108,6 +108,15 @@ if 'final_analysis_results' in st.session_state:
     summary = final_analysis['summary']
     projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
 
+    # --- [v5.0.0 偵錯] ---
+    # 檢查從後端回傳的 DataFrame 中，退休前的 'annual_investment_nominal' 欄位是否正確
+    if not projection_df.empty and 'annual_investment_nominal' in projection_df.columns:
+        pre_retirement_investments = projection_df[projection_df['phase'] == 'accumulation']['annual_investment_nominal']
+        print("--- [DEBUG in 40_dashboard.py] 退休前的新增投資數據: ---")
+        print(pre_retirement_investments.head())
+        print("----------------------------------------------------")
+    # --- [偵錯結束] ---
+    
     # 將使用者設定的退休年齡讀入一個變數
     user_retirement_age = plan.get('retirement_age', 65)
 
