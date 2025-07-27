@@ -87,6 +87,7 @@ with st.form("global_assumptions_form"):
 if submitted:
     # 將全局假設存回 retirement_plan
     updated_plan = {
+        'annual_investment': annual_investment,
         'asset_return_rate': asset_return_rate,
         'dividend_yield': dividend_yield,
         'withdrawal_rate': withdrawal_rate,
@@ -94,6 +95,9 @@ if submitted:
     }
     db.collection('users').document(user_id).set({'retirement_plan': updated_plan}, merge=True)
     
+    # 清除快取，確保計算引擎能讀取到最新的 plan
+    st.cache_data.clear()
+
     # 呼叫終極計算引擎
     with st.spinner("正在執行整合性財務模擬..."):
         final_analysis = get_holistic_financial_projection(user_id)
@@ -110,7 +114,7 @@ if submitted:
             for message in final_analysis['debug_log']:
                 st.info(message)
     # --- [偵錯結束] ---
-    
+
 # --- 顯示最終分析結果 ---
 if 'final_analysis_results' in st.session_state:
     final_analysis = st.session_state['final_analysis_results']
