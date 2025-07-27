@@ -208,8 +208,7 @@ if 'final_analysis_results' in st.session_state:
         # 圖表二：可支配所得長條圖
         chart_type_income = st.radio("選擇顯示模式 ", ["實質購買力", "名目價值"], key="income_chart_type", horizontal=True) # 空格用於區別 key
         y_income_var = 'disposable_income_real_value' if chart_type_income == '實質購買力' else 'disposable_income_nominal'
-
-        # [修正] 根據選擇，動態綁定 custom_data
+        
         custom_data_income_cols = [
             'total_income_real_value', 'monthly_disposable_income_real_value',
             'asset_income_real_value', 'pension_income_real_value'
@@ -218,7 +217,7 @@ if 'final_analysis_results' in st.session_state:
             'asset_income_nominal', 'pension_income_nominal'
         ]
 
-         fig_disposable = px.bar(
+        fig_disposable = px.bar(
             retirement_df, x="age", y=y_income_var,
             title=f"年度可支配所得趨勢 ({chart_type_income}, 已扣除負債支出)",
             labels={"age": "年齡", y_income_var: f"年度可支配所得 ({chart_type_income})"},
