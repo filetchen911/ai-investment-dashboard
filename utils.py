@@ -516,15 +516,17 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["phase"] = "accumulation"
             
             # 1. 計算投資增長：(年初資產) * 報酬率
-            investment_return = current_assets * return_rate
+            investment_gain_nominal = current_assets * return_rate
             
             # 2. 年末資產 = 年初資產 + 投資增長 + 年度新增投資
-            current_assets += investment_return + annual_investment
-            
+            current_assets += investment_gain_nominal + annual_investment
+
             # 在此階段，假設負債由薪資等非投資收入支付，不影響資產累積
             year_data["disposable_income_nominal"] = -annual_debt_payment # 此階段的可支配所得為負的還款額
             year_data["asset_income_nominal"] = 0
             year_data["pension_income_nominal"] = 0
+            year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
+            year_data["annual_investment_nominal"] = annual_investment         
         
         # 資產提領期
         else:
@@ -541,18 +543,19 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             total_income_nominal = asset_income_nominal + pension_income_nominal
             disposable_income_nominal = total_income_nominal - annual_debt_payment
             
-            # 更新資產價值
-            # 淨流出 = (總收入 - 退休金收入) - (總收入 - 可支配所得)
-            # 簡化為：淨流出 = (資產被動收入) - (負債還款)
-            # 修正：資產淨流出 = 總提領金額
-            net_withdrawal_from_assets = current_assets * withdrawal_rate
-            current_assets -= net_withdrawal_from_assets
-            current_assets *= (1 + return_rate) # 剩餘資產繼續增長
-            
+
+            # 2. 更新資產價值
+            #    (退休後不再有 annual_investment 的注入)
+            investment_gain_nominal = current_assets * return_rate
+            net_withdrawal_from_assets = asset_income_nominal - (current_assets * dividend_yield)
+            current_assets = (current_assets - net_withdrawal_from_assets) + investment_gain_nominal
+
             year_data["disposable_income_nominal"] = disposable_income_nominal
             year_data["asset_income_nominal"] = asset_income_nominal
             year_data["pension_income_nominal"] = pension_income_nominal
             year_data["withdrawal_percentage"] = withdrawal_rate * 100
+            year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
+            year_data["annual_investment_nominal"] = 0 
         # --- [修正結束] ---
 
         # --- [v5.0.0 最終修正] ---

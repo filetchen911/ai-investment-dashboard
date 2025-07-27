@@ -123,8 +123,40 @@ if 'final_analysis_results' in st.session_state:
     st.markdown("---")
     st.subheader("資產與負債長期走勢")
     chart_type_asset = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="asset_chart_type", horizontal=True)
-    y_asset_vars = ['year_end_assets_real_value', 'year_end_liabilities_real_value'] if chart_type_asset == '實質購買力' else ['year_end_assets_nominal', 'year_end_liabilities_nominal']
-    # ... (繪製資產負債圖表的邏輯，使用 y_asset_vars) ...
+    if not projection_df.empty:
+        asset_col = 'year_end_assets_real_value' if chart_type_asset == '實質購買力' else 'year_end_assets_nominal'
+        liability_col = 'year_end_liabilities_real_value' if chart_type_asset == '實質購買力' else 'year_end_liabilities_nominal'
+
+        df_to_plot_assets = projection_df.melt(
+            id_vars=['age', 'investment_gain_nominal', 'annual_investment_nominal'],
+            value_vars=[asset_col, liability_col],
+            var_name='項目',
+            value_name='金額'
+        )
+        
+        label_mapping_assets = {asset_col: '總資產價值', liability_col: '總負債餘額'}
+        df_to_plot_assets['項目'] = df_to_plot_assets['項目'].map(label_mapping_assets)
+
+        fig_assets = px.line(
+            df_to_plot_assets,
+            x="age",
+            y="金額",
+            color="項目",
+            title=f"資產與負債模擬曲線 ({chart_type_asset})",
+            labels={"age": "年齡", "金額": f"金額 (TWD, {chart_type_asset})"},
+            custom_data=['investment_gain_nominal', 'annual_investment_nominal']
+        )
+
+        fig_assets.update_traces(
+            hovertemplate="<b>年齡: %{x}</b><br>" +
+                          "項目: %{data.name}<br>" +
+                          "<b>年末價值: %{y:,.0f}</b><br><br>" +
+                          "--- 當年度變化 (名目) ---<br>" +
+                          "投資利得: %{customdata[0]:,.0f}<br>" +
+                          "新增投資: %{customdata[1]:,.0f}<br>" +
+                          "<extra></extra>"
+        )
+        st.plotly_chart(fig_assets, use_container_width=True)
 
     # [v5.0.0 建議 4 & 5] 新增現金流與可支配所得圖表
     st.markdown("---")
@@ -132,7 +164,7 @@ if 'final_analysis_results' in st.session_state:
     
     retirement_df = projection_df[projection_df['age'] >= plan.get('retirement_age', 65)].copy()
     if not retirement_df.empty:
-        # 圖表一：收入來源堆疊面積圖 (維持不變)
+        # 圖表一：收入來源堆疊面積圖
         # 將數據轉換為長格式以便繪圖
         cashflow_df = retirement_df.melt(
             id_vars=['age', 'withdrawal_percentage'],
