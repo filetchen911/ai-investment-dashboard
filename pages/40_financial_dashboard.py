@@ -102,21 +102,34 @@ if submitted:
     
     st.success("模擬計算完成！")
 
+    # --- [v5.0.0 偵錯] ---
+    # 檢查是否有偵錯日誌，並將其顯示在螢幕上
+    if 'debug_log' in final_analysis and final_analysis['debug_log']:
+        st.subheader("🔍 後端偵錯日誌 (from utils.py)")
+        with st.expander("點此查看詳細日誌"):
+            for message in final_analysis['debug_log']:
+                st.info(message)
+    # --- [偵錯結束] ---
+    
 # --- 顯示最終分析結果 ---
 if 'final_analysis_results' in st.session_state:
     final_analysis = st.session_state['final_analysis_results']
     summary = final_analysis['summary']
     projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
 
-    # --- [v5.0.0 偵錯] ---
-    # 檢查從後端回傳的 DataFrame 中，退休前的 'annual_investment_nominal' 欄位是否正確
-    if not projection_df.empty and 'annual_investment_nominal' in projection_df.columns:
-        pre_retirement_investments = projection_df[projection_df['phase'] == 'accumulation']['annual_investment_nominal']
-        print("--- [DEBUG in 40_dashboard.py] 退休前的新增投資數據: ---")
-        print(pre_retirement_investments.head())
-        print("----------------------------------------------------")
+    # --- [v5.0.0 偵錯] 將關鍵 DataFrame 打印在螢幕上 ---
+    st.markdown("---")
+    st.subheader("🔍 偵錯資訊")
+    with st.expander("點此查看從後端回傳的原始數據"):
+        st.write("`projection_df` 的前 10 筆資料：")
+        # 我們只關心與「新增投資」相關的欄位
+        debug_columns = ['age', 'phase', 'annual_investment_nominal', 'user_input_annual_investment']
+        # 檢查欄位是否存在，避免出錯
+        existing_debug_columns = [col for col in debug_columns if col in projection_df.columns]
+        st.dataframe(projection_df[existing_debug_columns].head(10))
+    st.markdown("---")
     # --- [偵錯結束] ---
-    
+
     # 將使用者設定的退休年齡讀入一個變數
     user_retirement_age = plan.get('retirement_age', 65)
 
@@ -146,6 +159,12 @@ if 'final_analysis_results' in st.session_state:
             var_name='項目',
             value_name='金額'
         )
+
+        # --- [v5.0.0 偵錯] 打印用來繪圖的最終 DataFrame ---
+        with st.expander("點此查看用於繪製「資產負債圖」的最終數據"):
+            st.write("`df_to_plot_assets` 的前 10 筆資料：")
+            st.dataframe(df_to_plot_assets.head(10))
+        # --- [偵錯結束] ---
 
         label_mapping_assets = {asset_col: '總資產價值', liability_col: '總負債餘額'}
         df_to_plot_assets['項目'] = df_to_plot_assets['項目'].map(label_mapping_assets)

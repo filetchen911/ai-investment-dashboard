@@ -457,6 +457,10 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
     return final_results
 
 def get_holistic_financial_projection(user_id: str) -> Dict:
+
+    # 建立一個列表來存放偵錯訊息
+    debug_log = []
+
     # 1. 初始化 (維持不變)
     plan = load_retirement_plan(user_id)
     raw_assets_df = load_user_assets_from_firestore(user_id)
@@ -473,7 +477,11 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     inflation_rate = plan.get('inflation_rate', 2.0) / 100
     annual_investment = plan.get('annual_investment', 0) # <-- [v5.0.0 新增]
 
-    print(f"--- [DEBUG in utils.py] 讀取到的 annual_investment: {annual_investment} ---")
+        # --- [v5.0.0 偵錯] ---
+    # 將第一條偵錯訊息加入日誌中
+    debug_log.append(f"[utils.py] 從 Firestore `plan` 中讀取到的 `annual_investment`: {annual_investment}")
+    # --- [偵錯結束] ---
+
     # --- [v5.0.0 修正] ---
     # 提取核心參數，確保變數被定義
     current_age = plan.get('current_age', 35)
@@ -595,7 +603,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         "first_year_disposable_income_real_value": next((y["disposable_income_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0)
     }
     
-    return {"summary": summary, "projection_timeseries": projection_timeseries}
+    return {"summary": summary, "projection_timeseries": projection_timeseries, "debug_log": debug_log}
     
 # --- [v4.1] 台灣退休金計算引擎 ---
 class RetirementCalculator:
