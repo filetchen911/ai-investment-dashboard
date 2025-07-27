@@ -526,7 +526,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["asset_income_nominal"] = 0
             year_data["pension_income_nominal"] = 0
             year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
-            year_data["annual_investment_nominal"] = annual_investment  
+            year_data["annual_investment_nominal"] = annual_investment  # 年度名義投資
             year_data["total_income_nominal"] = 0       
         
         # 資產提領期
@@ -557,7 +557,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["total_income_nominal"] = total_income_nominal # [新增] 記錄總收入
             year_data["withdrawal_percentage"] = withdrawal_rate * 100
             year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
-            year_data["annual_investment_nominal"] = 0 
+            year_data["annual_investment_nominal"] = 0 # 年度名義投資
         # --- [修正結束] ---
 
         # --- [v5.0.0 最終修正] ---
@@ -565,25 +565,24 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         years_from_now = age - current_age
         inflation_divisor = (1 + inflation_rate) ** (years_from_now + 1)
 
+        # 預先計算好所有前端需要的懸停資訊 (包含名目與實質)
+        year_data["monthly_disposable_income_nominal"] = year_data.get("disposable_income_nominal", 0) / 12 #每月可支配所得的名目價值
+        year_data["monthly_disposable_income_real_value"] = year_data.get("disposable_income_nominal", 0) / 12 / inflation_divisor #每月可支配所得的實際價值
+
         # 2. 儲存年末資產與負債 (名目與實質價值)
-        year_data["year_end_assets_nominal"] = current_assets
+        year_data["year_end_assets_nominal"] = current_assets #年終名目資產
         if not current_liabilities_df.empty:
             year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
         else:
-            year_data["year_end_liabilities_nominal"] = 0        
-        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
-        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
+            year_data["year_end_liabilities_nominal"] = 0 #年終名義負債       
+        year_data["year_end_assets_real_value"] = current_assets / inflation_divisor #年末資產實際價值
+        year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor #年末負債實際價值
 
-        for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal", "total_income_nominal"]:
-             year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
-
-
-        # 1. 預先計算好前端需要的懸停資訊
-        monthly_disposable_nominal = year_data.get("disposable_income_nominal", 0) / 12
-        year_data["monthly_disposable_income_nominal"] = monthly_disposable_nominal
-
-        # 2. 新增一個固定的年度投資額欄位，供懸停資訊使用
-        year_data["user_input_annual_investment"] = annual_investment if age < retirement_age else 0
+        # 產生所有需要的名目與實質欄位
+        for key in ["year_end_assets", "year_end_liabilities", "disposable_income", "asset_income", "pension_income", "total_income", "investment_gain", "annual_investment"]:
+             nominal_key = f"{key}_nominal"
+             real_key = f"{key}_real_value"
+             year_data[real_key] = year_data.get(nominal_key, 0) / inflation_divisor
 
         projection_timeseries.append(year_data)
 

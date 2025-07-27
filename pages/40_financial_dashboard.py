@@ -132,25 +132,24 @@ if 'final_analysis_results' in st.session_state:
         liability_col = 'year_end_liabilities_real_value' if chart_type_asset == '實質購買力' else 'year_end_liabilities_nominal'
 
         df_to_plot_assets = projection_df.melt(
-            id_vars=['age', 'investment_gain_nominal', 'user_input_annual_investment'],
+            id_vars=['age', 'investment_gain_nominal', 'annual_investment_nominal'], 
             value_vars=[asset_col, liability_col],
             var_name='項目',
             value_name='金額'
         )
-        
+
         label_mapping_assets = {asset_col: '總資產價值', liability_col: '總負債餘額'}
         df_to_plot_assets['項目'] = df_to_plot_assets['項目'].map(label_mapping_assets)
 
         fig_assets = px.line(
-            df_to_plot_assets, # <-- 直接使用這個 DataFrame
+            df_to_plot_assets,
             x="age",
             y="金額",
             color="項目",
             title=f"資產與負債模擬曲線 ({chart_type_asset})",
             labels={"age": "年齡", "金額": f"金額 (TWD, {chart_type_asset})"},
-            # --- [v5.0.0 修正] ---
-            # 直接從 df_to_plot_assets 中指定欄位名稱即可
-            custom_data=['investment_gain_nominal', 'user_input_annual_investment']
+            # [修正] custom_data 直接使用正確的欄位名稱
+            custom_data=['investment_gain_nominal', 'annual_investment_nominal']
         )
 
         fig_assets.update_traces(
@@ -162,8 +161,9 @@ if 'final_analysis_results' in st.session_state:
                           "新增投資: %{customdata[1]:,.0f}<br>" + # <-- 現在能正確讀取
                           "<extra></extra>"
         )
+
         st.plotly_chart(fig_assets, use_container_width=True)
-        
+
     # [v5.0.0 建議 4 & 5] 新增現金流與可支配所得圖表
     st.markdown("---")
     st.subheader("退休後年度現金流分析")
@@ -183,13 +183,19 @@ if 'final_analysis_results' in st.session_state:
             value_name='年度分項收入'
         )
         # ... (中文標籤映射不變) ...
-        
+        label_mapping_cashflow = {
+            'asset_income_real_value': '資產被動收入', 'pension_income_real_value': '退休金收入',
+            'asset_income_nominal': '資產被動收入', 'pension_income_nominal': '退休金收入'
+        }
+        cashflow_df['收入來源'] = cashflow_df['收入來源'].map(label_mapping_cashflow)
+
         fig_cashflow = px.bar(
             cashflow_df, x="age", y="年度分項收入", color="收入來源",
             title=f"退休後年度總收入來源分析 ({chart_type_cashflow})",
-            labels={"age": "年齡", "年度分項收入": f"年度收入 ({chart_type_cashflow})"},
+            labels={"age": "年齡", "年度分項收入": f"年度收入 ({chart_type_cashflow})", "收入來源": "收入來源"}, # <-- [修正] 新增圖例標籤
             custom_data=[total_income_var]
         )
+
         fig_cashflow.update_traces(
             hovertemplate="<b>年齡: %{x}</b><br><br>" +
                           "<b>年度總收入: %{customdata[0]:,.0f}</b><br>" +
@@ -200,28 +206,36 @@ if 'final_analysis_results' in st.session_state:
 
 
         # 圖表二：可支配所得長條圖
-        chart_type_income = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="income_chart_type", horizontal=True)
+        chart_type_income = st.radio("選擇顯示模式 ", ["實質購買力", "名目價值"], key="income_chart_type", horizontal=True) # 空格用於區別 key
         y_income_var = 'disposable_income_real_value' if chart_type_income == '實質購買力' else 'disposable_income_nominal'
-        
-        fig_disposable = px.bar(
+
+        # [修正] 根據選擇，動態綁定 custom_data
+        custom_data_income_cols = [
+            'total_income_real_value', 'monthly_disposable_income_real_value',
+            'asset_income_real_value', 'pension_income_real_value'
+        ] if chart_type_income == '實質購買力' else [
+            'total_income_nominal', 'monthly_disposable_income_nominal',
+            'asset_income_nominal', 'pension_income_nominal'
+        ]
+
+         fig_disposable = px.bar(
             retirement_df, x="age", y=y_income_var,
-            title="年度可支配所得趨勢 (已扣除負債支出)",
-            labels={"age": "年齡", y_income_var: "年度可支配所得 (TWD)"},
-            custom_data=[
-                'asset_income_nominal', 'pension_income_nominal',
-                'monthly_disposable_income_nominal'
-            ]
+            title=f"年度可支配所得趨勢 ({chart_type_income}, 已扣除負債支出)",
+            labels={"age": "年齡", y_income_var: f"年度可支配所得 ({chart_type_income})"},
+            custom_data=custom_data_income_cols
         )
+
         fig_disposable.update_traces(
             hovertemplate="<b>年齡: %{x}</b><br><br>" +
-                          "年度總收入: %{customdata[0]:,.0f} (資產) + %{customdata[1]:,.0f} (退休金)<br>" +
                           "<b>年度可支配所得: %{y:,.0f}</b><br>" +
-                          "每月可支配所得約: %{customdata[2]:,.0f}<br>" + # <-- 直接讀取，不再計算
-                          "<br>--- 收入來源 (名目) ---<br>" +
-                          "資產被動收入: %{customdata[0]:,.0f}<br>" +
-                          "退休金收入: %{customdata[1]:,.0f}<br>" +                          
-                          "<extra></extra>" # 隱藏多餘的 trace name
+                          "每月可支配所得約: %{customdata[1]:,.0f}<br>" +
+                          "<br>--- 年度總收入 ---<br>" +
+                          "總計: %{customdata[0]:,.0f}<br>" +
+                          "來自資產: %{customdata[2]:,.0f}<br>" +
+                          "來自退休金: %{customdata[3]:,.0f}<br>" +
+                          "<extra></extra>"
         )
+
         st.plotly_chart(fig_disposable, use_container_width=True)
     else:
         st.info("無退休後數據可供分析。")
