@@ -497,20 +497,18 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         # 計算當年度的負債還款總額 (維持不變)
         annual_debt_payment = 0
         if not current_liabilities_df.empty:
-            # 計算當年度需支付的總還款額
             still_paying_df = current_liabilities_df[
-                # 條件：(目前年份 <= 貸款起始年份 + 貸款年限) AND (剩餘本金 > 0)
-                current_year <= (pd.to_datetime(current_liabilities_df['start_date']).dt.year + current_liabilities_df['loan_period_years'])
+                (current_year <= (pd.to_datetime(current_liabilities_df['start_date']).dt.year + current_liabilities_df['loan_period_years'])) &
+                (current_liabilities_df['outstanding_balance'] > 0)
             ]
             annual_debt_payment = still_paying_df['monthly_payment'].sum() * 12
             
-            # 更新剩餘總負債 (簡化為總額扣減，未來可優化為逐筆攤銷)
-            total_current_liabilities = current_liabilities_df['outstanding_balance'].sum()
+            # 更新剩餘總負債
             new_total_liabilities = max(0, total_current_liabilities - annual_debt_payment)
-            
-            # 為了簡化，我們只更新總額，未來可優化為更新每一筆貸款的餘額
-            # 此處的模擬主要是為了現金流，而非精確的逐筆餘額
-            current_liabilities_df['outstanding_balance'] = new_total_liabilities * (current_liabilities_df['outstanding_balance'] / total_current_liabilities) if total_current_liabilities > 0 else 0
+            if total_current_liabilities > 0:
+                # 按比例更新每一筆貸款的餘額
+                current_liabilities_df['outstanding_balance'] = new_total_liabilities * (current_liabilities_df['outstanding_balance'] / total_current_liabilities)
+            total_current_liabilities = new_total_liabilities
 
         # --- [v5.0.0 最終修正] ---
         # 資產累積期
@@ -564,10 +562,13 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
 
         # 2. 儲存年末資產與負債 (名目與實質價值)
         year_data["year_end_assets_nominal"] = current_assets
-        year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
+        if not current_liabilities_df.empty:
+            year_data["year_end_liabilities_nominal"] = current_liabilities_df['outstanding_balance'].sum()
+        else:
+            year_data["year_end_liabilities_nominal"] = 0        
         year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
         year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
-        
+
         for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
              year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
 
