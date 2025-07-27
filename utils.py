@@ -526,7 +526,8 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["asset_income_nominal"] = 0
             year_data["pension_income_nominal"] = 0
             year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
-            year_data["annual_investment_nominal"] = annual_investment         
+            year_data["annual_investment_nominal"] = annual_investment  
+            year_data["total_income_nominal"] = 0       
         
         # 資產提領期
         else:
@@ -553,6 +554,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
             year_data["disposable_income_nominal"] = disposable_income_nominal
             year_data["asset_income_nominal"] = asset_income_nominal
             year_data["pension_income_nominal"] = pension_income_nominal
+            year_data["total_income_nominal"] = total_income_nominal # [新增] 記錄總收入
             year_data["withdrawal_percentage"] = withdrawal_rate * 100
             year_data["investment_gain_nominal"] = investment_gain_nominal # <-- 改名
             year_data["annual_investment_nominal"] = 0 
@@ -572,7 +574,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         year_data["year_end_assets_real_value"] = current_assets / inflation_divisor
         year_data["year_end_liabilities_real_value"] = year_data["year_end_liabilities_nominal"] / inflation_divisor
 
-        for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
+        for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal", "total_income_nominal"]:
              year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
 
 
@@ -582,7 +584,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
 
         # 2. 新增一個固定的年度投資額欄位，供懸停資訊使用
         year_data["user_input_annual_investment"] = annual_investment if age < retirement_age else 0
-                
+
         projection_timeseries.append(year_data)
 
     # 最終輸出模型 (擴充 summary)
