@@ -108,6 +108,9 @@ if 'final_analysis_results' in st.session_state:
     summary = final_analysis['summary']
     projection_df = pd.DataFrame(final_analysis['projection_timeseries'])
 
+    # 將使用者設定的退休年齡讀入一個變數
+    user_retirement_age = plan.get('retirement_age', 65)
+
     st.markdown("---")
     # [v5.0.0 建議 1] 擴充為 2x2 指標矩陣
     st.subheader("退休關鍵指標")
@@ -128,7 +131,7 @@ if 'final_analysis_results' in st.session_state:
         liability_col = 'year_end_liabilities_real_value' if chart_type_asset == '實質購買力' else 'year_end_liabilities_nominal'
 
         df_to_plot_assets = projection_df.melt(
-            id_vars=['age', 'investment_gain_nominal', 'annual_investment_nominal'],
+            id_vars=['age', 'investment_gain_nominal', 'user_input_annual_investment'],
             value_vars=[asset_col, liability_col],
             var_name='項目',
             value_name='金額'
@@ -161,8 +164,10 @@ if 'final_analysis_results' in st.session_state:
     # [v5.0.0 建議 4 & 5] 新增現金流與可支配所得圖表
     st.markdown("---")
     st.subheader("退休後年度現金流分析")
-    
-    retirement_df = projection_df[projection_df['age'] >= plan.get('retirement_age', 65)].copy()
+
+    # [修正] 使用者設定的退休年齡來篩選數據
+    retirement_df = projection_df[projection_df['age'] >= user_retirement_age].copy()    
+
     if not retirement_df.empty:
         # 圖表一：收入來源堆疊面積圖
         # 將數據轉換為長格式以便繪圖
@@ -180,20 +185,21 @@ if 'final_analysis_results' in st.session_state:
         cashflow_df['收入來源'] = cashflow_df['收入來源'].map(label_mapping)
         
         # 繪製堆疊面積圖
-        fig_cashflow = px.area(
+        # [建議 4] 改為繪製堆疊長條圖
+        fig_cashflow = px.bar(
             cashflow_df,
-            x="age",
-            y="年度收入 (TWD)",
-            color="收入來源",
-            title="退休後年度總收入來源分析 (經通膨調整)",
-            labels={"age": "年齡", "年度收入 (TWD)": "年度總收入 (今日購買力)"},
-            custom_data=['withdrawal_percentage'] # 將提領率加入圖表數據中
+            x="age", y="年度收入 (TWD)", color="收入來源",
+            title="退休後年度總收入來源分析 (實質購買力)",
+            labels={"age": "年齡", "年度收入 (TWD)": "年度總收入 (今日購買力)"}
         )
 
         # 在圖表的懸停提示中顯示提領率
-        fig_cashflow.update_traces(hovertemplate='年齡: %{x}<br>年度收入: %{y:,.0f}<br>當年資產提領率: %{customdata[0]:.2f}%')
-        
+        #fig_cashflow.update_traces(hovertemplate='年齡: %{x}<br>年度收入: %{y:,.0f}<br>當年資產提領率: %{customdata[0]:.2f}%')
+
         st.plotly_chart(fig_cashflow, use_container_width=True)
+
+        
+
 
         # 圖表二：可支配所得長條圖
         chart_type_income = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="income_chart_type", horizontal=True)
@@ -205,15 +211,17 @@ if 'final_analysis_results' in st.session_state:
             labels={"age": "年齡", y_income_var: "年度可支配所得 (TWD)"},
             custom_data=[
                 'asset_income_nominal', 'pension_income_nominal',
-                'disposable_income_nominal', 'withdrawal_percentage'
+                'monthly_disposable_income_nominal'
             ]
         )
         fig_disposable.update_traces(
             hovertemplate="<b>年齡: %{x}</b><br><br>" +
                           "年度總收入: %{customdata[0]:,.0f} (資產) + %{customdata[1]:,.0f} (退休金)<br>" +
                           "<b>年度可支配所得: %{y:,.0f}</b><br>" +
-                          "每月可支配所得: %{customdata[2]:,.0f} / 12<br>" +
-                          "當年資產提領率: %{customdata[3]:.2f}%<br>" +
+                          "每月可支配所得約: %{customdata[2]:,.0f}<br>" + # <-- 直接讀取，不再計算
+                          "<br>--- 收入來源 (名目) ---<br>" +
+                          "資產被動收入: %{customdata[0]:,.0f}<br>" +
+                          "退休金收入: %{customdata[1]:,.0f}<br>" +                          
                           "<extra></extra>" # 隱藏多餘的 trace name
         )
         st.plotly_chart(fig_disposable, use_container_width=True)

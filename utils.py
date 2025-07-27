@@ -575,6 +575,14 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         for key in ["disposable_income_nominal", "asset_income_nominal", "pension_income_nominal"]:
              year_data[key.replace('_nominal', '_real_value')] = year_data.get(key, 0) / inflation_divisor
 
+
+        # 1. 預先計算好前端需要的懸停資訊
+        monthly_disposable_nominal = year_data.get("disposable_income_nominal", 0) / 12
+        year_data["monthly_disposable_income_nominal"] = monthly_disposable_nominal
+
+        # 2. 新增一個固定的年度投資額欄位，供懸停資訊使用
+        year_data["user_input_annual_investment"] = annual_investment if age < retirement_age else 0
+                
         projection_timeseries.append(year_data)
 
     # 最終輸出模型 (擴充 summary)
