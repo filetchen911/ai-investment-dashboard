@@ -142,18 +142,24 @@ if 'final_analysis_results' in st.session_state:
         df_to_plot_assets['項目'] = df_to_plot_assets['項目'].map(label_mapping_assets)
 
         fig_assets = px.line(
-            df_to_plot_assets, x="age", y="金額", color="項目",
+            df_to_plot_assets, # <-- 直接使用這個 DataFrame
+            x="age",
+            y="金額",
+            color="項目",
             title=f"資產與負債模擬曲線 ({chart_type_asset})",
             labels={"age": "年齡", "金額": f"金額 (TWD, {chart_type_asset})"},
-            custom_data=df_to_plot_assets.merge(projection_df[['age', 'investment_gain_nominal', 'user_input_annual_investment']], on='age')
+            # --- [v5.0.0 修正] ---
+            # 直接從 df_to_plot_assets 中指定欄位名稱即可
+            custom_data=['investment_gain_nominal', 'user_input_annual_investment']
         )
+
         fig_assets.update_traces(
             hovertemplate="<b>年齡: %{x}</b><br>" +
                           "項目: %{data.name}<br>" +
                           "<b>年末價值: %{y:,.0f}</b><br><br>" +
                           "--- 當年度變化 (名目) ---<br>" +
-                          "投資利得: %{customdata[3]:,.0f}<br>" + # <-- 索引已更新
-                          "新增投資: %{customdata[4]:,.0f}<br>" + # <-- 索引已更新
+                          "投資利得: %{customdata[0]:,.0f}<br>" + # <-- 現在能正確讀取
+                          "新增投資: %{customdata[1]:,.0f}<br>" + # <-- 現在能正確讀取
                           "<extra></extra>"
         )
         st.plotly_chart(fig_assets, use_container_width=True)
