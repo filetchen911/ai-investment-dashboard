@@ -491,6 +491,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     # 初始負債狀態
     # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
     current_liabilities_df = liabilities_df.copy()
+    total_current_liabilities = current_liabilities_df['outstanding_balance'].sum() if not current_liabilities_df.empty else 0
     
     # 取得退休金預估
     pension_results = get_full_retirement_analysis(plan)
