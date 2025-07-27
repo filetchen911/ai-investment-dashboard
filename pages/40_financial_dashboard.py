@@ -126,6 +126,7 @@ if 'final_analysis_results' in st.session_state:
     st.markdown("---")
     st.subheader("資產與負債長期走勢")
     chart_type_asset = st.radio("選擇顯示模式", ["實質購買力", "名目價值"], key="asset_chart_type", horizontal=True)
+
     if not projection_df.empty:
         asset_col = 'year_end_assets_real_value' if chart_type_asset == '實質購買力' else 'year_end_assets_nominal'
         liability_col = 'year_end_liabilities_real_value' if chart_type_asset == '實質購買力' else 'year_end_liabilities_nominal'
@@ -147,7 +148,9 @@ if 'final_analysis_results' in st.session_state:
             color="項目",
             title=f"資產與負債模擬曲線 ({chart_type_asset})",
             labels={"age": "年齡", "金額": f"金額 (TWD, {chart_type_asset})"},
-            custom_data=['investment_gain_nominal', 'annual_investment_nominal']
+            # --- [v5.0.0 修正] ---
+            # 將 custom_data 中的欄位名稱，與 id_vars 中保持一致
+            custom_data=['investment_gain_nominal', 'user_input_annual_investment']
         )
 
         fig_assets.update_traces(
@@ -160,7 +163,6 @@ if 'final_analysis_results' in st.session_state:
                           "<extra></extra>"
         )
         st.plotly_chart(fig_assets, use_container_width=True)
-
     # [v5.0.0 建議 4 & 5] 新增現金流與可支配所得圖表
     st.markdown("---")
     st.subheader("退休後年度現金流分析")
