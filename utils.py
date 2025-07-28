@@ -487,7 +487,11 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     current_age = plan.get('current_age', 35)
     retirement_age = plan.get('retirement_age', 65)
     # --- [修正結束] ---
-        
+ 
+     # 取得退休金預估
+    pension_results = get_full_retirement_analysis(plan)
+    legal_age = pension_results.get('labor_insurance', {}).get('legal_age', 65)
+
     # 初始負債狀態
     # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
     current_liabilities_df = liabilities_df.copy()
