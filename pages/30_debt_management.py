@@ -39,9 +39,8 @@ def update_all_debt_balances():
             batch.update(doc_ref, {"outstanding_balance": new_balance})
         batch.commit()
     
-    st.success(f"成功更新了 {len(updated_balances)} 筆債務的剩餘本金！")
+    st.session_state['debt_update_success_message'] = f"成功更新了 {len(updated_balances)} 筆債務的剩餘本金！"
     st.cache_data.clear()
-    st.rerun()
 
 # --- [v5.0.0 最終重構] 統一的、狀態驅動的智慧債務表單 ---
 def debt_form(mode='add', existing_data=None):
@@ -156,6 +155,12 @@ if c1.button("➕ 新增債務資料"):
 if not liabilities_df.empty:
     c2.button("🔄 立即更新所有債務狀況", on_click=update_all_debt_balances, help="根據您設定的總額、利率、年限等參數，自動計算並更新所有負債的『目前』剩餘本金。")
 
+# 檢查 session_state 中是否有成功訊息需要顯示
+if 'debt_update_success_message' in st.session_state:
+    st.success(st.session_state['debt_update_success_message'])
+    # 顯示後就刪除，避免頁面刷新後重複顯示
+    del st.session_state['debt_update_success_message']
+    
 if 'show_add_form' not in st.session_state:
     st.session_state.show_add_form = False
 
@@ -167,7 +172,7 @@ st.markdown("---")
 # 債務列表
 if not liabilities_df.empty:
     st.subheader("我的負債列表")
-    st.info("ℹ️ 溫馨提醒：...") 
+    st.info("ℹ️ 溫馨提醒：為確保「財務自由儀表板」的模擬結果準確，請在央行調整利率或每隔一段時間（例如：每年），點擊下方「✏️」按鈕，回來更新您各項貸款的「目前年利率」與「剩餘未償還本金」。") 
 
     debt_categories = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
     existing_categories = [cat for cat in debt_categories if cat in liabilities_df['debt_type'].unique()]
