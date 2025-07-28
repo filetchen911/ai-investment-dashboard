@@ -491,11 +491,61 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     # 初始負債狀態
     # [v5.0.0 修正] 我們需要保留完整的 liabilities_df 以便逐筆計算
     current_liabilities_df = liabilities_df.copy()
-    total_current_liabilities = current_liabilities_df['outstanding_balance'].sum() if not current_liabilities_df.empty else 0
-    
-    # 取得退休金預估
-    pension_results = get_full_retirement_analysis(plan)
-    legal_age = pension_results.get('labor_insurance', {}).get('legal_age', 65)
+
+    # --- [v5.0.0 最終修正] 建立一個精密的、能回測歷史的逐月攤銷引擎 ---
+    def generate_full_amortization_schedule(loan):
+        schedule = []
+        # 使用總貸款金額作為計算起點
+        principal = loan['total_amount']
+        monthly_rate = loan['interest_rate'] / 100 / 12
+        start_date = pd.to_datetime(loan['start_date'])
+        total_months = loan['loan_period_years'] * 12
+        today = pd.to_datetime(datetime.now())
+
+        # 模擬從貸款第一天到還清為止的完整過程
+        for i in range(total_months):
+            current_date = start_date + pd.DateOffset(months=i)
+            # 如果模擬的月份已經超過今天+模擬總年期，就停止
+            if i > (datetime.now().year - start_date.year + 100 - current_age) * 12 :
+                break
+            
+            is_in_grace_period = (current_date.year < start_date.year + loan['grace_period_years'])
+
+            interest_payment = principal * monthly_rate
+            
+            if is_in_grace_period:
+                principal_payment = 0
+                total_payment = loan.get('grace_period_payment', interest_payment) # 優先使用使用者輸入，否則用利息
+            else:
+                total_payment = loan['monthly_payment']
+                principal_payment = total_payment - interest_payment
+            
+            principal -= principal_payment
+            
+            # 只記錄從今年開始的未來現金流
+            if current_date.year >= datetime.now().year:
+                schedule.append({
+                    "year": current_date.year,
+                    "total_payment": total_payment,
+                    "ending_balance": max(0, principal)
+                })
+        return pd.DataFrame(schedule)
+
+    # 為每一筆貸款都產生完整的攤銷表
+    if not current_liabilities_df.empty:
+        all_schedules = [generate_full_amortization_schedule(loan) for _, loan in current_liabilities_df.iterrows()]
+        full_amortization_df = pd.concat(all_schedules)
+        # 按年份匯總，得到每年的總還款額與年底總餘額
+        if not full_amortization_df.empty:
+            yearly_debt_summary = full_amortization_df.groupby('year').agg(
+                annual_debt_payment=('total_payment', 'sum'),
+                year_end_liabilities_nominal=('ending_balance', 'last')
+            ).reset_index()
+        else:
+            yearly_debt_summary = pd.DataFrame(columns=['year', 'annual_debt_payment', 'year_end_liabilities_nominal'])
+    else:
+        yearly_debt_summary = pd.DataFrame(columns=['year', 'annual_debt_payment', 'year_end_liabilities_nominal'])
+        
 
     projection_timeseries = []
     
@@ -504,42 +554,10 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         year_data = {"age": age}
         current_year = datetime.now().year + (age - current_age)
 
-        # --- [v5.0.0 最終修正] 精準的、考慮寬限期的債務償還模擬 ---
-        annual_debt_payment = 0
-        if not current_liabilities_df.empty:
-            
-            # 建立一個列表來收集每一筆貸款的年度還款額
-            payments_this_year = []
-            
-            # 逐一處理每一筆貸款
-            for index, loan in current_liabilities_df.iterrows():
-                loan_start_year = loan['start_date'].year
-                loan_end_year = loan_start_year + loan['loan_period_years']
-                grace_period_end_year = loan_start_year + loan['grace_period_years']
-
-                payment_this_loan = 0
-                principal_paid_this_loan = 0
-
-                # 只有在還款期間內，才計算還款
-                if loan_start_year <= current_year < loan_end_year and loan['outstanding_balance'] > 0:
-                    
-                    # 判斷是否在寬限期內
-                    if current_year < grace_period_end_year:
-                        payment_this_loan = loan.get('grace_period_payment_val', 0) * 12
-                        principal_paid_this_loan = 0 # 寬限期不還本金
-                    else:
-                        payment_this_loan = loan['monthly_payment'] * 12
-                        # 計算利息與本金部分
-                        annual_interest_paid = loan['outstanding_balance'] * (loan['interest_rate'] / 100)
-                        principal_paid_this_loan = max(0, payment_this_loan - annual_interest_paid)
-
-                    # 更新該筆貸款的剩餘本金
-                    current_liabilities_df.loc[index, 'outstanding_balance'] = max(0, loan['outstanding_balance'] - principal_paid_this_loan)
-                
-                payments_this_year.append(payment_this_loan)
-            
-            # 加總當年度所有貸款的還款額
-            annual_debt_payment = sum(payments_this_year)
+        # 從預先算好的攤銷表中，直接查詢當年度的數據
+        debt_info_this_year = yearly_debt_summary[yearly_debt_summary['year'] == current_year]
+        annual_debt_payment = debt_info_this_year['annual_debt_payment'].iloc[0] if not debt_info_this_year.empty else 0
+        year_end_liabilities_nominal = debt_info_this_year['year_end_liabilities_nominal'].iloc[0] if not debt_info_this_year.empty else 0
 
         # --- [v5.0.0 最終修正] ---
         # 資產累積期
