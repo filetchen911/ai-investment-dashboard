@@ -1,12 +1,12 @@
 # pages/30_debt_management.py
 # App Version: v5.0.0
-# Description: Final refactored version with a state-driven smart form and generalized loan calculator.
+# Description: Added "Update Balances" button and details expander.
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from firebase_admin import firestore
-from utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar
+from utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot
 
 render_sidebar()
 
@@ -20,6 +20,28 @@ if 'user_id' not in st.session_state:
     st.stop()
 user_id = st.session_state['user_id']
 db, _ = init_firebase()
+
+# --- [v5.0.0 新增功能] 「立即更新債務狀況」的後端邏輯 ---
+def update_all_debt_balances():
+    # 使用 st.cache_data.clear() 來確保讀取到最新的資料
+    st.cache_data.clear()
+    liabilities_to_update = load_user_liabilities(user_id)
+    if liabilities_to_update.empty:
+        st.toast("沒有可更新的債務。")
+        return
+
+    with st.spinner("正在根據您的貸款參數，重新計算所有債務的目前剩餘本金..."):
+        updated_balances = calculate_current_debt_snapshot(liabilities_to_update)
+        
+        batch = db.batch()
+        for doc_id, new_balance in updated_balances.items():
+            doc_ref = db.collection('users').document(user_id).collection('liabilities').document(doc_id)
+            batch.update(doc_ref, {"outstanding_balance": new_balance})
+        batch.commit()
+    
+    st.success(f"成功更新了 {len(updated_balances)} 筆債務的剩餘本金！")
+    st.cache_data.clear()
+    st.rerun()
 
 # --- [v5.0.0 最終重構] 統一的、狀態驅動的智慧債務表單 ---
 def debt_form(mode='add', existing_data=None):
@@ -124,15 +146,18 @@ if not liabilities_df.empty:
     col2.metric("總月付金 (TWD)", f"${total_monthly_payment:,.0f}")
 else:
     st.info("您目前沒有建立任何債務資料。")
-    
-# --- [重構] 使用獨立的 session_state 來控制新增表單的顯示 ---
+
+# --- [v5.0.0 新增功能] 按鈕放置處 ---
+c1, c2, c3 = st.columns([1, 1, 2])
+if c1.button("➕ 新增債務資料"):
+    # 我們將使用 session_state 來控制表單的顯示，而不是 on_click
+    st.session_state.show_add_form = True
+
+if not liabilities_df.empty:
+    c2.button("🔄 立即更新所有債務狀況", on_click=update_all_debt_balances, help="根據您設定的總額、利率、年限等參數，自動計算並更新所有負債的『目前』剩餘本金。")
+
 if 'show_add_form' not in st.session_state:
     st.session_state.show_add_form = False
-
-def toggle_add_form():
-    st.session_state.show_add_form = not st.session_state.show_add_form
-
-st.button("➕ 新增債務資料", on_click=toggle_add_form)
 
 if st.session_state.show_add_form:
     debt_form(mode='add')
@@ -142,7 +167,7 @@ st.markdown("---")
 # 債務列表
 if not liabilities_df.empty:
     st.subheader("我的負債列表")
-    st.info("ℹ️ 溫馨提醒：為確保「財務自由儀表板」的模擬結果準確，請在央行調整利率或每隔一段時間（例如：每年），點擊下方「✏️」按鈕，回來更新您各項貸款的「目前年利率」與「剩餘未償還本金」。")
+    st.info("ℹ️ 溫馨提醒：...") 
 
     debt_categories = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
     existing_categories = [cat for cat in debt_categories if cat in liabilities_df['debt_type'].unique()]
@@ -150,30 +175,45 @@ if not liabilities_df.empty:
     if 'editing_debt_id' not in st.session_state:
         st.session_state.editing_debt_id = None
 
-    for _, row in liabilities_df.iterrows():
-        doc_id = row['doc_id']
-        with st.container(border=True):
-            if st.session_state.editing_debt_id == doc_id:
-                debt_form(mode='edit', existing_data=row.to_dict())
-            else:
-                # ... (列表項目的顯示邏輯維持不變，但可以顯示更詳細的月付金)
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"**{row['custom_name']}** (`{row['debt_type']}`)")
-                    sub_cols = st.columns(3)
-                    sub_cols[0].metric("剩餘本金", f"${row.get('outstanding_balance', 0):,.0f}")
-                    # 根據是否有寬限期月付來決定顯示方式
-                    if row.get('grace_period_payment', 0) > 0:
-                         sub_cols[1].metric("月付金(本息)", f"${row.get('monthly_payment', 0):,.0f}", delta=f"寬限期 ${row.get('grace_period_payment', 0):,.0f}", delta_color="off")
+    debt_tabs = st.tabs(existing_categories)
+    
+    for i, category in enumerate(existing_categories):
+        with debt_tabs[i]:
+            category_df = liabilities_df[liabilities_df['debt_type'] == category]
+            
+            for _, row in category_df.iterrows():
+                doc_id = row['doc_id']
+                with st.container(border=True):
+                    if st.session_state.editing_debt_id == doc_id:
+                        debt_form(mode='edit', existing_data=row.to_dict())
                     else:
-                        sub_cols[1].metric("月付金", f"${row.get('monthly_payment', 0):,.0f}")
-                    sub_cols[2].metric("目前年利率", f"{row.get('interest_rate', 0.0):.2f}%")
-                with col2:
-                    if st.button("✏️ 編輯", key=f"edit_{doc_id}", use_container_width=True):
-                        st.session_state.editing_debt_id = doc_id
-                        st.rerun()
-                    if st.button("🗑️ 刪除", key=f"delete_{doc_id}", use_container_width=True):
-                        db.collection('users').document(user_id).collection('liabilities').document(doc_id).delete()
-                        st.success(f"債務 {row['custom_name']} 已刪除！")
-                        st.cache_data.clear()
-                        st.rerun()                
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.markdown(f"**{row['custom_name']}** (`{row['debt_type']}`)")
+                            sub_cols = st.columns(3)
+                            sub_cols[0].metric("剩餘本金", f"${row.get('outstanding_balance', 0):,.0f}")
+                            if row.get('grace_period_payment_val', 0) > 0 and row.get('grace_period_payment_val') != row.get('monthly_payment', 0):
+                                 sub_cols[1].metric("月付金(本息)", f"${row.get('monthly_payment', 0):,.0f}", delta=f"寬限期 ${row.get('grace_period_payment_val', 0):,.0f}", delta_color="off")
+                            else:
+                                sub_cols[1].metric("月付金", f"${row.get('monthly_payment', 0):,.0f}")
+                            sub_cols[2].metric("目前年利率", f"{row.get('interest_rate', 0.0):.2f}%")
+                        
+                        with col2:
+                            if st.button("✏️ 編輯", key=f"edit_{doc_id}", use_container_width=True):
+                                st.session_state.editing_debt_id = doc_id
+                                st.session_state.show_add_form = False # 編輯時自動關閉新增表單
+                                st.rerun()
+                            if st.button("🗑️ 刪除", key=f"delete_{doc_id}", use_container_width=True):
+                                db.collection('users').document(user_id).collection('liabilities').document(doc_id).delete()
+                                st.success(f"債務 {row['custom_name']} 已刪除！")
+                                st.cache_data.clear()
+                                st.rerun()
+                        
+                        # --- [v5.0.0 建議 2] 新增詳細資訊折疊選單 ---
+                        with st.expander("查看詳細設定"):
+                            detail_cols = st.columns(4)
+                            detail_cols[0].markdown(f"**總貸款金額**<br>${row.get('total_amount', 0):,.0f}", unsafe_allow_html=True)
+                            detail_cols[1].markdown(f"**總貸款年限**<br>{row.get('loan_period_years', 0)} 年", unsafe_allow_html=True)
+                            detail_cols[2].markdown(f"**寬限期年數**<br>{row.get('grace_period_years', 0)} 年", unsafe_allow_html=True)
+                            start_date_str = pd.to_datetime(row.get('start_date')).strftime('%Y-%m-%d') if row.get('start_date') else 'N/A'
+                            detail_cols[3].markdown(f"**貸款起始日期**<br>{start_date_str}", unsafe_allow_html=True)
