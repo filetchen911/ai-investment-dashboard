@@ -1,12 +1,12 @@
 # pages/30_debt_management.py
 # App Version: v5.0.0
-# Description: Added "Update Balances" button and details expander.
+# Description: Final version with auto-recalculation on edit and improved UX.
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from firebase_admin import firestore
-from utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot
+from utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot, recalculate_single_loan
 
 render_sidebar()
 
@@ -23,23 +23,22 @@ db, _ = init_firebase()
 
 # --- [v5.0.0 新增功能] 「立即更新債務狀況」的後端邏輯 ---
 def update_all_debt_balances():
-    # 使用 st.cache_data.clear() 來確保讀取到最新的資料
     st.cache_data.clear()
     liabilities_to_update = load_user_liabilities(user_id)
     if liabilities_to_update.empty:
         st.toast("沒有可更新的債務。")
         return
 
-    with st.spinner("正在根據您的貸款參數，重新計算所有債務的目前剩餘本金..."):
-        updated_balances = calculate_current_debt_snapshot(liabilities_to_update)
+    with st.spinner("正在重新計算所有債務的剩餘本金與月付金..."):
+        updated_data = calculate_current_debt_snapshot(liabilities_to_update)
         
         batch = db.batch()
-        for doc_id, new_balance in updated_balances.items():
+        for doc_id, data in updated_data.items():
             doc_ref = db.collection('users').document(user_id).collection('liabilities').document(doc_id)
-            batch.update(doc_ref, {"outstanding_balance": new_balance})
+            batch.update(doc_ref, data)
         batch.commit()
     
-    st.session_state['debt_update_success_message'] = f"成功更新了 {len(updated_balances)} 筆債務的剩餘本金！"
+    st.session_state['debt_update_success_message'] = f"成功更新了 {len(updated_data)} 筆債務！"
     st.cache_data.clear()
 
 # --- [v5.0.0 最終重構] 統一的、狀態驅動的智慧債務表單 ---
@@ -120,8 +119,15 @@ def debt_form(mode='add', existing_data=None):
                 st.success(f"債務「{form_data['custom_name'] or form_data['debt_type']}」已成功新增！")
                 st.session_state.show_add_form = False
             else:
-                db.collection('users').document(user_id).collection('liabilities').document(existing_data['doc_id']).update(form_data)
-                st.success(f"債務「{form_data['custom_name']}」已成功更新！")
+                with st.spinner("正在根據您修改後的參數，重新計算最新的債務狀況..."):
+                    recalculated_data = recalculate_single_loan(form_data)
+                
+                # 將使用者修改的參數，與引擎算出的新數值，合併為最終要更新的資料
+                final_update_data = form_data.copy()
+                final_update_data.update(recalculated_data)
+
+                db.collection('users').document(user_id).collection('liabilities').document(existing_data['doc_id']).update(final_update_data)
+                st.success(f"債務「{final_update_data['custom_name']}」已成功更新！")
                 st.session_state.editing_debt_id = None
 
             del st.session_state[state_key]
@@ -160,7 +166,7 @@ if 'debt_update_success_message' in st.session_state:
     st.success(st.session_state['debt_update_success_message'])
     # 顯示後就刪除，避免頁面刷新後重複顯示
     del st.session_state['debt_update_success_message']
-    
+
 if 'show_add_form' not in st.session_state:
     st.session_state.show_add_form = False
 

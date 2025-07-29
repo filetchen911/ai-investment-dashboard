@@ -374,42 +374,89 @@ def calculate_asset_metrics(assets_df: pd.DataFrame) -> pd.DataFrame:
 def calculate_current_debt_snapshot(liabilities_df: pd.DataFrame) -> Dict:
     """
     接收使用者所有的債務資料，為每一筆貸款從「起始日」模擬到「今天」，
-    計算出截至今日最精確的剩餘本金。
-    回傳一個 {doc_id: new_balance} 的字典。
+    計算出截至今日最精確的剩餘本金與月付金。
+    回傳一個 {doc_id: {"balance": new_balance, "payments": new_payments}} 的字典。
     """
     if liabilities_df.empty:
         return {}
 
-    updated_balances = {}
+    updated_data = {}
     today = pd.to_datetime(datetime.now())
 
     for _, loan in liabilities_df.iterrows():
         principal = loan['total_amount']
-        monthly_rate = loan['interest_rate'] / 100 / 12
-        start_date = pd.to_datetime(loan['start_date'])
-        total_months = loan['loan_period_years'] * 12
+        annual_rate = loan['interest_rate']
+        years = loan['loan_period_years']
+        grace_period_years = loan['grace_period_years']
+        
+        # 重新計算月付金
+        new_payments = calculate_loan_payments(principal, annual_rate, years, grace_period_years)
 
-        # 模擬從貸款第一天到今天為止的過程
+        # 模擬歷史攤銷
+        start_date = pd.to_datetime(loan['start_date'])
         months_passed = (today.year - start_date.year) * 12 + (today.month - start_date.month)
         
-        for i in range(min(months_passed, total_months)):
+        for i in range(min(months_passed, years * 12)):
             current_date = start_date + pd.DateOffset(months=i)
-            is_in_grace_period = (current_date < start_date + pd.DateOffset(years=loan['grace_period_years']))
+            is_in_grace_period = (current_date < start_date + pd.DateOffset(years=grace_period_years))
             
-            interest_payment = principal * monthly_rate
+            interest_payment = principal * (annual_rate / 100 / 12)
             
             if is_in_grace_period:
                 principal_payment = 0
             else:
-                total_payment = loan['monthly_payment']
-                principal_payment = total_payment - interest_payment
+                principal_payment = new_payments['regular_payment'] - interest_payment
             
             principal -= principal_payment
         
-        updated_balances[loan['doc_id']] = max(0, principal)
+        updated_data[loan['doc_id']] = {
+            "outstanding_balance": max(0, principal),
+            "monthly_payment": new_payments['regular_payment'],
+            "grace_period_payment_val": new_payments['grace_period_payment']
+        }
         
-    return updated_balances
+    return updated_data
+
+def recalculate_single_loan(loan_data: dict) -> dict:
+    """
+    接收單筆貸款的所有核心參數，從頭回測至今日，
+    回傳最精準的剩餘本金與月付金。
+    """
+    today = pd.to_datetime(datetime.now())
     
+    # 從傳入的字典中讀取參數
+    principal = loan_data.get('total_amount', 0)
+    annual_rate = loan_data.get('interest_rate', 0.0)
+    years = loan_data.get('loan_period_years', 0)
+    grace_period_years = loan_data.get('grace_period_years', 0)
+    start_date = pd.to_datetime(loan_data.get('start_date'))
+
+    # 1. 根據最新參數，重新計算月付金
+    new_payments = calculate_loan_payments(principal, annual_rate, years, grace_period_years)
+
+    # 2. 模擬歷史攤銷，計算最新剩餘本金
+    months_passed = (today.year - start_date.year) * 12 + (today.month - start_date.month)
+    
+    for i in range(min(months_passed, years * 12)):
+        current_date = start_date + pd.DateOffset(months=i)
+        is_in_grace_period = (current_date < start_date + pd.DateOffset(years=grace_period_years))
+        
+        interest_payment = principal * (annual_rate / 100 / 12)
+        
+        if is_in_grace_period:
+            principal_payment = 0
+        else:
+            principal_payment = new_payments['regular_payment'] - interest_payment
+        
+        principal -= principal_payment
+    
+    # 3. 回傳包含所有最新計算值的字典
+    return {
+        "outstanding_balance": max(0, principal),
+        "monthly_payment": new_payments['regular_payment'],
+        "grace_period_payment_val": new_payments['grace_period_payment']
+    }
+        
 # [v5.0.0 最終修正] 重新命名函數，使其更通用
 def calculate_loan_payments(principal, annual_rate, years, grace_period_years=0):
     """
