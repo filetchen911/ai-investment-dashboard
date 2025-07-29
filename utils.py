@@ -545,9 +545,6 @@ def get_full_retirement_analysis(user_inputs: Dict) -> Dict:
 
 def get_holistic_financial_projection(user_id: str) -> Dict:
 
-    # 建立一個列表來存放偵錯訊息
-    debug_log = []
-
     # 1. 初始化 (維持不變)
     plan = load_retirement_plan(user_id)
     raw_assets_df = load_user_assets_from_firestore(user_id)
@@ -563,11 +560,6 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
     withdrawal_rate = plan.get('retirement_withdrawal_rate', 4.0) / 100
     inflation_rate = plan.get('inflation_rate', 2.0) / 100
     annual_investment = plan.get('annual_investment', 0) # <-- [v5.0.0 新增]
-
-        # --- [v5.0.0 偵錯] ---
-    # 將第一條偵錯訊息加入日誌中
-    debug_log.append(f"[utils.py] 從 Firestore `plan` 中讀取到的 `annual_investment`: {annual_investment}")
-    # --- [偵錯結束] ---
 
     # --- [v5.0.0 修正] ---
     # 提取核心參數，確保變數被定義
@@ -628,10 +620,6 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         if all_yearly_schedules:
             full_amortization_df = pd.concat(all_yearly_schedules)
             yearly_debt_summary = full_amortization_df.groupby('year').sum().reset_index()
-
-    # [偵錯]
-    debug_log.append("[utils.py] 預先計算的逐年負債攤銷表 (前5年):")
-    debug_log.append(yearly_debt_summary.head().to_string())
         
 
     projection_timeseries = []
@@ -736,7 +724,7 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
         "first_month_disposable_income_real_value": first_year_real / 12
     }
     
-    return {"summary": summary, "projection_timeseries": projection_timeseries, "debug_log": debug_log}
+    return {"summary": summary, "projection_timeseries": projection_timeseries}
     
 # --- [v4.1] 台灣退休金計算引擎 ---
 class RetirementCalculator:
