@@ -140,13 +140,16 @@ if 'final_analysis_results' in st.session_state:
     st.markdown("---")
     # [v5.0.0 建議 1] 擴充為 2x2 指標矩陣
     st.subheader("退休關鍵指標")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("預計退休時總資產 (名目價值)", f"NT$ {summary['assets_at_retirement_nominal']:,.0f}")
         st.metric("預計退休時總資產 (今日購買力)", f"NT$ {summary['assets_at_retirement_real_value']:,.0f}")
     with col2:
         st.metric("退休後第一年可支配所得 (名目價值)", f"NT$ {summary['first_year_disposable_income_nominal']:,.0f} /年")
         st.metric("退休後第一年可支配所得 (今日購買力)", f"NT$ {summary['first_year_disposable_income_real_value']:,.0f} /年")
+    with col3:
+        st.metric("...換算為每月所得 (名目價值)", f"NT$ {summary.get('first_month_disposable_income_nominal', 0):,.0f} /月")
+        st.metric("...換算為每月所得 (今日購買力)", f"NT$ {summary.get('first_month_disposable_income_real_value', 0):,.0f} /月")
 
     # [v5.0.0 建議 3] 資產與負債圖表 (含切換)
     st.markdown("---")

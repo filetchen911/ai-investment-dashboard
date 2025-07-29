@@ -456,7 +456,7 @@ def recalculate_single_loan(loan_data: dict) -> dict:
         "monthly_payment": new_payments['regular_payment'],
         "grace_period_payment_val": new_payments['grace_period_payment']
     }
-        
+
 # [v5.0.0 最終修正] 重新命名函數，使其更通用
 def calculate_loan_payments(principal, annual_rate, years, grace_period_years=0):
     """
@@ -721,12 +721,19 @@ def get_holistic_financial_projection(user_id: str) -> Dict:
 
         projection_timeseries.append(year_data)
 
+    first_year_nominal = next((y["disposable_income_nominal"] for y in projection_timeseries if y["age"] == retirement_age), 0)
+    first_year_real = next((y["disposable_income_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0)
     # 最終輸出模型 (擴充 summary)
     summary = {
         "assets_at_retirement_nominal": next((y["year_end_assets_nominal"] for y in projection_timeseries if y["age"] == retirement_age), 0),
         "assets_at_retirement_real_value": next((y["year_end_assets_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0),
-        "first_year_disposable_income_nominal": next((y["disposable_income_nominal"] for y in projection_timeseries if y["age"] == retirement_age), 0),
-        "first_year_disposable_income_real_value": next((y["disposable_income_real_value"] for y in projection_timeseries if y["age"] == retirement_age), 0)
+        
+        "first_year_disposable_income_nominal": first_year_nominal,
+        "first_year_disposable_income_real_value": first_year_real,
+        
+        # 新增每月可支配所得
+        "first_month_disposable_income_nominal": first_year_nominal / 12,
+        "first_month_disposable_income_real_value": first_year_real / 12
     }
     
     return {"summary": summary, "projection_timeseries": projection_timeseries, "debug_log": debug_log}
