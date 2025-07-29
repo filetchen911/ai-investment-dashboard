@@ -56,7 +56,7 @@ def debt_form(mode='add', existing_data=None):
             }
     s = st.session_state[state_key]
 
-    def _calculate_payments_callback():
+    def _update_and_calculate():
         """回呼函數：先從介面更新 state，再用 state 進行計算"""
         # 1. 從 widget 的 key 更新 session state
         for key in ['debt_type', 'custom_name', 'total_amount', 'outstanding_balance', 'interest_rate', 'loan_period_years', 'grace_period_years', 'start_date', 'grace_period_payment', 'monthly_payment']:
@@ -68,6 +68,7 @@ def debt_form(mode='add', existing_data=None):
         payments = calculate_loan_payments(s['total_amount'], s['interest_rate'], s['loan_period_years'], s['grace_period_years'])
         s['grace_period_payment'] = payments['grace_period_payment']
         s['monthly_payment'] = payments['regular_payment']
+      
 
     with st.form(key=f"{mode}_debt_form"):
         st.subheader("新增一筆債務" if mode == 'add' else f"正在編輯: {s.get('custom_name', '')}")
