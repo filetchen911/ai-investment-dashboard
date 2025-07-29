@@ -1,6 +1,6 @@
 # pages/30_debt_management.py
 # App Version: v5.0.0
-# Description: Final version with auto-recalculation on edit and improved UX.
+# Description: Final UX/UI refinement for the debt management module.
 
 import streamlit as st
 import pandas as pd
@@ -41,27 +41,22 @@ def update_all_debt_balances():
     st.session_state['debt_update_success_message'] = f"成功更新了 {len(updated_data)} 筆債務！"
     st.cache_data.clear()
 
-# --- [v5.0.0 最終重構] 統一的、狀態驅動的智慧債務表單 ---
+# --- [v5.0.0 最終修正] 統一的、狀態驅動的智慧債務表單 ---
 def debt_form(mode='add', existing_data=None):
-    """
-    一個統一的債務表單，其所有狀態都由 session_state 驅動。
-    """
-    # 為每個表單實例建立唯一的 state key
     state_key = f"form_state_{mode}_{existing_data.get('doc_id', 'new') if existing_data else 'new'}"
     if state_key not in st.session_state:
         if mode == 'edit' and existing_data is not None:
             st.session_state[state_key] = existing_data
         else:
-            # 新增模式，預設值全部為 0 或空
             st.session_state[state_key] = {
-                "debt_type": "房屋貸款", "total_amount": 0, "outstanding_balance": 0,
+                "debt_type": "房屋貸款", "total_amount": 0,
                 "interest_rate": 0.0, "loan_period_years": 0, "grace_period_years": 0,
                 "start_date": datetime.now().date(), "custom_name": "",
                 "grace_period_payment": 0, "monthly_payment": 0
             }
     s = st.session_state[state_key]
 
-    def _update_and_calculate():
+    def _calculate_payments_callback():
         """回呼函數：先從介面更新 state，再用 state 進行計算"""
         # 1. 從 widget 的 key 更新 session state
         for key in ['debt_type', 'custom_name', 'total_amount', 'outstanding_balance', 'interest_rate', 'loan_period_years', 'grace_period_years', 'start_date', 'grace_period_payment', 'monthly_payment']:
@@ -81,16 +76,18 @@ def debt_form(mode='add', existing_data=None):
         
         c1, c2 = st.columns(2)
         with c1:
-            st.selectbox("債務類型", debt_types, index=debt_types.index(s.get('debt_type', '房屋貸款')), key=f"widget_{mode}_debt_type")
-            st.text_input("自訂名稱", value=s.get('custom_name', ''), help="例如：我的房子、國泰世華信貸", key=f"widget_{mode}_custom_name")
-            st.number_input("總貸款金額", min_value=0, value=int(s.get('total_amount', 0)), step=10000, key=f"widget_{mode}_total_amount")
-            st.number_input("剩餘未償還本金", min_value=0, value=int(s.get('outstanding_balance', 0)), step=10000, key=f"widget_{mode}_outstanding_balance")
-        
+            s['debt_type'] = st.selectbox("債務類型", debt_types, index=debt_types.index(s.get('debt_type', '房屋貸款')))
+            s['custom_name'] = st.text_input("自訂名稱", value=s.get('custom_name', ''), help="例如：我的房子、國泰世華信貸")
+            s['total_amount'] = st.number_input("總貸款金額", min_value=0, value=int(s.get('total_amount', 0)), step=10000)
+            
+            # --- [修正 2] 移除 outstanding_balance 輸入框 ---
+            # `outstanding_balance` 不再由使用者輸入
+
         with c2:
-            st.number_input("目前年利率 (%)", 0.0, 20.0, value=float(s.get('interest_rate', 0.0)), step=0.01, format="%.2f", key=f"widget_{mode}_interest_rate")
-            st.number_input("總貸款年限", min_value=0, max_value=40, value=int(s.get('loan_period_years', 0)), key=f"widget_{mode}_loan_period_years")
-            st.number_input("寬限期年數 (無則填0)", 0, 10, value=int(s.get('grace_period_years', 0)), key=f"widget_{mode}_grace_period_years")
-            st.date_input("貸款起始日期", value=pd.to_datetime(s.get('start_date')).date() if s.get('start_date') else datetime.now().date(), key=f"widget_{mode}_start_date")
+            s['interest_rate'] = st.number_input("目前年利率 (%)", 0.0, 20.0, value=float(s.get('interest_rate', 0.0)), step=0.01, format="%.2f", help="請輸入您貸款的『目前』利率。所有自動試算與更新功能都將以此利率為基準回測。")
+            s['loan_period_years'] = st.number_input("總貸款年限", min_value=0, max_value=40, value=int(s.get('loan_period_years', 0)))
+            s['grace_period_years'] = st.number_input("寬限期年數 (無則填0)", 0, 10, value=int(s.get('grace_period_years', 0)))
+            s['start_date'] = st.date_input("貸款起始日期", value=pd.to_datetime(s.get('start_date')).date() if s.get('start_date') else datetime.now().date())
 
         st.markdown("---")
         
@@ -113,30 +110,31 @@ def debt_form(mode='add', existing_data=None):
             form_data = st.session_state[state_key].copy()
             form_data['start_date'] = datetime.combine(form_data['start_date'], datetime.min.time())
             
+            with st.spinner("正在為您計算最新的債務狀況..."):
+                recalculated_data = recalculate_single_loan(form_data)
+            
+            final_data = form_data.copy()
+            final_data.update(recalculated_data)
+
             if mode == 'add':
-                form_data["created_at"] = firestore.SERVER_TIMESTAMP
-                db.collection('users').document(user_id).collection('liabilities').add(form_data)
-                st.success(f"債務「{form_data['custom_name'] or form_data['debt_type']}」已成功新增！")
+                final_data["created_at"] = firestore.SERVER_TIMESTAMP
+                db.collection('users').document(user_id).collection('liabilities').add(final_data)
+                st.success(f"債務「{final_data['custom_name'] or final_data['debt_type']}」已成功新增！")
                 st.session_state.show_add_form = False
             else:
-                with st.spinner("正在根據您修改後的參數，重新計算最新的債務狀況..."):
-                    recalculated_data = recalculate_single_loan(form_data)
-                
-                # 將使用者修改的參數，與引擎算出的新數值，合併為最終要更新的資料
-                final_update_data = form_data.copy()
-                final_update_data.update(recalculated_data)
-
-                db.collection('users').document(user_id).collection('liabilities').document(existing_data['doc_id']).update(final_update_data)
-                st.success(f"債務「{final_update_data['custom_name']}」已成功更新！")
+                db.collection('users').document(user_id).collection('liabilities').document(existing_data['doc_id']).update(final_data)
+                st.success(f"債務「{final_data['custom_name']}」已成功更新！")
                 st.session_state.editing_debt_id = None
 
             del st.session_state[state_key]
             st.cache_data.clear()
             st.rerun()
 
-        if mode == 'edit' and btn_cancel.form_submit_button("取消", type="secondary", use_container_width=True):
+        # --- [修正 1] 新增/編輯模式下都顯示取消按鈕 ---
+        if btn_cancel.form_submit_button("取消", type="secondary", use_container_width=True):
             del st.session_state[state_key]
-            st.session_state.editing_debt_id = None
+            if mode == 'add': st.session_state.show_add_form = False
+            else: st.session_state.editing_debt_id = None
             st.rerun()
 
 # --- 主體邏輯 ---
@@ -178,7 +176,7 @@ st.markdown("---")
 # 債務列表
 if not liabilities_df.empty:
     st.subheader("我的負債列表")
-    st.info("ℹ️ 溫馨提醒：為確保「財務自由儀表板」的模擬結果準確，請在央行調整利率或每隔一段時間（例如：每年），點擊下方「✏️」按鈕，回來更新您各項貸款的「目前年利率」與「剩餘未償還本金」。") 
+    st.info("ℹ️ 溫馨提醒：「剩餘本金」為系統根據您的貸款參數，從頭回測至今日的**估算值**。此估算基於您設定的**目前利率**，若您過去的利率有變動，可能與銀行實際數字有輕微誤差。")
 
     debt_categories = ["房屋貸款", "信用貸款", "汽車貸款", "就學貸款", "其他"]
     existing_categories = [cat for cat in debt_categories if cat in liabilities_df['debt_type'].unique()]
