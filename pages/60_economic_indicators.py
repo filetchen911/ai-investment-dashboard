@@ -4,6 +4,8 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import time
+
 from utils import (
     init_firebase, 
     load_latest_economic_data, 

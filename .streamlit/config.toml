@@ -1,2 +1,6 @@
 [client]
 showSidebarNavigation = false
+
+[server]
+# 停用檔案監視功能，以解決 inotify instance limit reached 的問題
+fileWatcherType = "none"

@@ -1,6 +1,8 @@
 # pages/2_💡_AI_新聞精選.py
 import streamlit as st
 import datetime
+import time
+
 from utils import (
     init_firebase, 
     load_latest_insights, 
