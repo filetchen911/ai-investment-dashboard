@@ -22,7 +22,7 @@ from utils import (
 
 render_sidebar()
 
-st.header("📊 資產概覽")
+st.title("📊 資產概覽")
 
 # --- 身份驗證與初始化 ---
 if 'user_id' not in st.session_state:

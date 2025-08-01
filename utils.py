@@ -14,6 +14,7 @@ import numpy as np
 import logging
 import sys
 import numpy_financial as npf
+import pytz 
 from typing import Dict, List, Tuple, Optional
 from config import APP_VERSION # <--- 從 config.py 引用
 
@@ -1093,3 +1094,106 @@ class RetirementCalculator:
         return results
 
 # --- [v4.1] 計算引擎結束 ---
+
+# --- [v5.2.0 新增] 後端服務通訊函式 ---
+
+def get_general_analysis_status() -> dict:
+    """
+    檢查 Firestore 中是否已有當日的通用分析報告，並確認其是否新鮮。
+    """
+    print("  > [Utils] 正在檢查通用分析快取狀態...")
+    db, _ = init_firebase()
+    taipei_tz = pytz.timezone('Asia/Taipei')
+    doc_id = datetime.now(taipei_tz).strftime("%Y-%m-%d")
+    doc_ref = db.collection('general_analysis').document(doc_id)
+    
+    try:
+        doc = doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict()
+            last_updated_utc = data.get('last_updated').replace(tzinfo=pytz.UTC)
+            now_utc = datetime.now(pytz.UTC)
+            time_difference_hours = (now_utc - last_updated_utc).total_seconds() / 3600
+            
+            is_fresh = time_difference_hours < 4 # 4小時內算新鮮
+            
+            print(f"  > [Utils] 快取找到：報告存在，新鮮度={is_fresh} ({time_difference_hours:.2f} 小時前)。")
+            return {"exists": True, "is_fresh": is_fresh, "data": data}
+        else:
+            print("  > [Utils] 快取未命中：今日尚無分析報告。")
+            return {"exists": False, "is_fresh": False, "data": None}
+    except Exception as e:
+        st.error(f"檢查快取時發生錯誤: {e}")
+        return {"exists": False, "is_fresh": False, "data": None}
+
+
+def trigger_general_analysis() -> bool:
+    """
+    呼叫後端服務，觸發一次全新的通用市場分析。
+    """
+    print("  > [Utils] 正在觸發通用分析服務...")
+    try:
+        url = st.secrets.backend_urls.general_analysis
+        response = requests.post(url, timeout=300) # 設定較長的 timeout
+        
+        if response.status_code == 200:
+            print("  > [Utils] 通用分析服務成功完成。")
+            st.toast("✅ 通用市場分析已產生！", icon="📊")
+            return True
+        else:
+            print(f"  > [Utils] 通用分析服務回傳錯誤: {response.status_code}, {response.text}")
+            st.error(f"通用分析服務失敗: {response.text}")
+            return False
+    except Exception as e:
+        print(f"  > [Utils] 呼叫通用分析服務時發生例外: {e}")
+        st.error(f"無法連接至通用分析服務: {e}")
+        return False
+
+
+def trigger_personal_insight(user_id: str) -> bool:
+    """
+    呼叫後端服務，為指定用戶產生個人化洞察報告。
+    """
+    print(f"  > [Utils] 正在為用戶 {user_id} 觸發個人化分析服務...")
+    try:
+        url = st.secrets.backend_urls.personal_insight
+        payload = {"user_id": user_id}
+        response = requests.post(url, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+            print("  > [Utils] 個人化分析服務成功完成。")
+            st.toast("✅ 您的個人化洞察已產生！", icon="💡")
+            return True
+        else:
+            print(f"  > [Utils] 個人化分析服務回傳錯誤: {response.status_code}, {response.text}")
+            st.error(f"個人化分析服務失敗: {response.text}")
+            return False
+    except Exception as e:
+        print(f"  > [Utils] 呼叫個人化分析服務時發生例外: {e}")
+        st.error(f"無法連接至個人化分析服務: {e}")
+        return False
+
+
+def trigger_scraper() -> bool:
+    """
+    呼叫後端服務，手動觸發一次經濟指標抓取。
+    """
+    print("  > [Utils] 正在觸發經濟指標抓取服務...")
+    try:
+        url = st.secrets.backend_urls.scraper
+        response = requests.post(url, timeout=120)
+
+        if response.status_code == 200:
+            print("  > [Utils] 經濟指標抓取服務成功完成。")
+            st.toast("✅ 經濟指標已更新！", icon="📈")
+            return True
+        else:
+            print(f"  > [Utils] 經濟指標抓取服務回傳錯誤: {response.status_code}, {response.text}")
+            st.error(f"經濟指標更新失敗: {response.text}")
+            return False
+    except Exception as e:
+        print(f"  > [Utils] 呼叫經濟指標抓取服務時發生例外: {e}")
+        st.error(f"無法連接至經濟指標抓取服務: {e}")
+        return False
+
+# --- [新增結束] ---

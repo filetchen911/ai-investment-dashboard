@@ -1,2 +1,2 @@
 # config.py
-APP_VERSION = "v5.1.0"
+APP_VERSION = "v5.2.0-rc1"

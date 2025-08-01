@@ -4,13 +4,30 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from utils import init_firebase, load_latest_economic_data, render_sidebar
+from utils import (
+    init_firebase, 
+    load_latest_economic_data, 
+    render_sidebar,
+    trigger_scraper # [v5.2.0] 引入新的輔助函式
+)
 
 render_sidebar()
 
-st.set_page_config(layout="wide", page_title="關鍵經濟指標趨勢")
+#st.set_page_config(layout="wide", page_title="關鍵經濟指標趨勢")
 st.title("📈 關鍵經濟指標趨勢")
 
+# --- [v5.2.0 修改] 手動更新按鈕的完整邏輯 ---
+if st.button("🔄 手動更新經濟指標"):
+    with st.spinner("正在從 FRED API 更新最新數據..."):
+        success = trigger_scraper()
+        if success:
+            # 清除快取，確保下次讀取時能抓到最新數據
+            st.cache_data.clear()
+            st.success("數據更新成功！頁面將在2秒後自動刷新。")
+            time.sleep(2)
+            st.rerun()
+# --- [修改結束] ---
+    
 # --- 身份驗證與初始化 ---
 if 'user_id' not in st.session_state:
     st.info("請先從主頁面登入。")

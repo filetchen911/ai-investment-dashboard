@@ -17,7 +17,7 @@ from utils import (
 render_sidebar()
 
 # --- 頁面配置 ---
-st.set_page_config(layout="wide", page_title="財務自由儀表板")
+#st.set_page_config(layout="wide", page_title="財務自由儀表板")
 st.title("🏁 財務自由儀表板")
 
 # --- 身份驗證與初始化 ---
