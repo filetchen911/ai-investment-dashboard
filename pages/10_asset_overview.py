@@ -22,6 +22,7 @@ from utils import (
 
 render_sidebar()
 
+st.set_page_config(layout="wide")
 st.title("📊 資產概覽")
 
 # --- 身份驗證與初始化 ---

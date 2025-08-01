@@ -15,7 +15,7 @@ from utils import (
 
 render_sidebar()
 
-#st.set_page_config(layout="wide", page_title="關鍵經濟指標趨勢")
+st.set_page_config(layout="wide")
 st.title("📈 關鍵經濟指標趨勢")
 
 # --- 身份驗證與初始化 ---

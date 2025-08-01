@@ -15,7 +15,7 @@ from utils import (
 
 render_sidebar()
 
-#st.set_page_config(layout="wide", page_title="AI 每日市場洞察")
+st.set_page_config(layout="wide")
 st.title("💡 AI 每日市場洞察")
 
 # --- 身份驗證與初始化 ---

@@ -13,7 +13,7 @@ from utils import init_firebase, get_full_retirement_analysis, load_retirement_p
 render_sidebar()
 
 # --- 頁面配置 ---
-#st.set_page_config(layout="wide", page_title="退休金總覽")
+st.set_page_config(layout="wide")
 st.title("🏦 退休金總覽與模擬")
 
 # --- 身份驗證與初始化 ---
