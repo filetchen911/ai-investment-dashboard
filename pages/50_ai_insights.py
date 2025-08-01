@@ -1,4 +1,5 @@
-# pages/2_💡_AI_新聞精選.py
+# file: pages/50_ai_insights.py
+
 import streamlit as st
 import datetime
 import time
@@ -17,43 +18,6 @@ render_sidebar()
 #st.set_page_config(layout="wide", page_title="AI 每日市場洞察")
 st.title("💡 AI 每日市場洞察")
 
-# --- [v5.2.0 修改] 智慧觸發按鈕的完整邏輯 ---
-if st.button("🚀 產生今日 AI 洞察"):
-    with st.spinner("正在檢查您的分析狀態..."):
-        # 檢查點 1：使用者個人當日報告是否已存在？
-        if 'user_id' in st.session_state and load_latest_insights(st.session_state['user_id']):
-            st.info("✅ 您今日的個人化分析報告已存在，無需重複產生。")
-            st.stop()
-
-        # 檢查點 2：通用的「市場分析」快取是否存在且夠新？
-        st.write(" > 正在檢查通用市場分析快取...")
-        status = get_general_analysis_status()
-
-        # 如果通用分析不存在或已過時，則觸發一次
-        if not status["exists"] or not status["is_fresh"]:
-            st.write(" > 通用分析不存在或已過時，正在啟動深層分析（可能需要1-2分鐘）...")
-            success_general = trigger_general_analysis()
-            if not success_general:
-                st.error("通用市場分析失敗，請稍後再試。")
-                st.stop()
-        else:
-            st.write(" > 發現新鮮的通用市場分析，正在使用快取...")
-
-        # 檢查點 3：產生個人化分析
-        st.write(" > 正在為您產生個人化影響分析...")
-        if 'user_id' in st.session_state:
-            success_personal = trigger_personal_insight(st.session_state['user_id'])
-            if success_personal:
-                st.success("分析報告已成功產生！頁面將在2秒後自動刷新。")
-                time.sleep(2)
-                st.rerun()
-            else:
-                st.error("產生個人化報告時失敗，請稍後再試。")
-        else:
-            st.warning("請先登入，才能產生個人化報告。")
-
-# --- [修改結束] ---
-
 # --- 身份驗證與初始化 ---
 if 'user_id' not in st.session_state:
     st.info("請先從主頁面登入，以查看您的個人化 AI 洞見。")
@@ -61,6 +25,39 @@ if 'user_id' not in st.session_state:
 
 user_id = st.session_state['user_id']
 db, _ = init_firebase()
+
+
+# --- [v5.2.0-rc3 修正] 按鈕移至登入檢查內部 ---
+if st.button("🚀 產生今日 AI 洞察"):
+    with st.spinner("正在檢查您的分析狀態..."):
+        # 檢查點 1：使用者個人當日報告是否已存在？
+        if load_latest_insights(user_id):
+            # [v5.2.0-rc3 修正] 移除 st.stop()，讓頁面繼續渲染已存在的報告
+            st.info("✅ 您今日的個人化分析報告已存在。")
+        else:
+            # 檢查點 2：通用的「市場分析」快取是否存在且夠新？
+            st.write(" > 正在檢查通用市場分析快取...")
+            status = get_general_analysis_status()
+
+            if not status["exists"] or not status["is_fresh"]:
+                st.write(" > 通用分析不存在或已過時，正在啟動深層分析（可能需要1-2分鐘）...")
+                success_general = trigger_general_analysis()
+                if not success_general:
+                    st.error("通用市場分析失敗，請稍後再試。")
+                    st.stop()
+            else:
+                st.write(" > 發現新鮮的通用市場分析，正在使用快取...")
+
+            # 檢查點 3：產生個人化分析
+            st.write(" > 正在為您產生個人化影響分析...")
+            success_personal = trigger_personal_insight(user_id)
+            if success_personal:
+                st.success("分析報告已成功產生！頁面將在2秒後自動刷新。")
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error("產生個人化報告時失敗，請稍後再試。")
+
 
 # --- 頁面主要邏輯 ---
 insights_data = load_latest_insights(user_id)
