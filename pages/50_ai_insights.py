@@ -52,6 +52,10 @@ if st.button("🚀 產生今日 AI 洞察"):
             st.write(" > 正在為您產生個人化影響分析...")
             success_personal = trigger_personal_insight(user_id)
             if success_personal:
+                # --- [v5.2.0-rc7 快取修正] ---
+                # 在刷新頁面前，手動清除所有數據快取
+                st.cache_data.clear()
+                # --- [修正結束] ---                
                 st.success("分析報告已成功產生！頁面將在2秒後自動刷新。")
                 time.sleep(2)
                 st.rerun()
