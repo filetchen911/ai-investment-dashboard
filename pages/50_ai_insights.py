@@ -63,7 +63,14 @@ if st.button("🚀 產生今日 AI 洞察"):
 insights_data = load_latest_insights(user_id)
 
 if insights_data:
-    st.caption(f"上次分析時間: {datetime.datetime.now(datetime.timezone.utc).astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')} (台北時間)")
+    # --- [v5.2.0-rc4 修正] ---
+    # 從 insights_data 字典中讀取真實的分析時間 ('date' 欄位)
+    # 若找不到 'date' 欄位，則退回顯示當前時間作為備用
+    analysis_time = insights_data.get('date', datetime.datetime.now())
+    
+    # 使用讀取到的 analysis_time 來格式化並顯示
+    st.caption(f"上次分析時間: {analysis_time.strftime('%Y-%m-%d %H:%M')} (台北時間)")
+    # --- [修正結束] ---
     
     st.subheader("今日市場總結")
     st.info(insights_data.get('market_summary', '暫無總結。'))

@@ -239,13 +239,39 @@ def load_quotes_from_firestore():
 
 @st.cache_data(ttl=900)
 def load_latest_insights(user_id):
+    """
+    從 Firestore 讀取使用者最新的 AI 洞見。
+    [v5.2.0-rc4 修正] 新增時效性判斷，僅當最新一筆資料是「今天」時才回傳。
+    """
     db, _ = init_firebase()
     try:
         query = db.collection('users').document(user_id).collection('daily_insights').order_by('date', direction=firestore.Query.DESCENDING).limit(1)
         docs = list(query.stream())
+        
         if docs:
-            return docs[0].to_dict().get('insight_data')
+            data = docs[0].to_dict()
+            doc_timestamp = data.get('date')
+            
+            # --- [v5.2.0-rc4 修正] 時效性判斷邏輯 ---
+            if doc_timestamp:
+                taipei_tz = pytz.timezone('Asia/Taipei')
+                
+                # 獲取今天的日期字串 (例如 "2025-08-02")
+                today_str = datetime.datetime.now(taipei_tz).strftime("%Y-%m-%d")
+                
+                # 將從 Firestore 讀取的時間戳 (本身是 UTC 時區) 轉換為台北時區
+                doc_date_taipei = doc_timestamp.astimezone(taipei_tz)
+                # 將轉換後的日期也格式化為字串
+                doc_date_str = doc_date_taipei.strftime("%Y-%m-%d")
+                
+                # 只有當文件的日期與今天是同一天時，才回傳資料
+                if doc_date_str == today_str:
+                    return data.get('insight_data')
+            # --- [修正結束] ---
+
+        # 如果沒有任何文件，或是最新一筆文件不是今天的，都回傳 None
         return None
+        
     except Exception as e:
         st.error(f"讀取 AI 洞見時發生錯誤: {e}")
         return None
