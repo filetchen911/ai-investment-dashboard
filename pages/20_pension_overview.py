@@ -1,5 +1,5 @@
 # pages/20_🏦_退休金總覽.py
-# App Version: v5.0.0
+# App Version: v5.2.0
 # Description: A self-contained module for pension planning, including data entry, calculation, and results display.
 
 import streamlit as st

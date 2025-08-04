@@ -1,5 +1,5 @@
 # pages/10_asset_overview.py
-# App Version: v5.0.0
+# App Version: v5.2.0
 # Description: Refactored to use the central calculate_asset_metrics function from utils.
 
 

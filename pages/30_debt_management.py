@@ -1,5 +1,5 @@
 # pages/30_debt_management.py
-# App Version: v5.0.0
+# App Version: v5.2.0
 # Description: Final UX/UI refinement for the debt management module.
 
 import streamlit as st

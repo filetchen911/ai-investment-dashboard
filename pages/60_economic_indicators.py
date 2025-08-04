@@ -1,5 +1,4 @@
-
-# pages/3_📈_決策輔助指標.py
+# App Version: v5.2.0
 
 import streamlit as st
 import pandas as pd

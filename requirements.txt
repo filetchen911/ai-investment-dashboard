@@ -3,6 +3,6 @@ pandas
 firebase-admin
 yfinance
 requests
-plotly  # <--- 新增
-numpy   # 用於穩健的數學計算
-numpy-financial  # <-- [v4.1 新增] 為退休金計算引擎加入
+plotly  
+numpy   
+numpy-financial  

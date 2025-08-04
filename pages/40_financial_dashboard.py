@@ -1,5 +1,5 @@
 # pages/40_financial_dashboard.py
-# App Version: v5.0.0
+# App Version: v5.2.0
 # Description: Final enhanced version with multiple charts, toggles, and detailed metrics.
 
 import streamlit as st

@@ -1,4 +1,4 @@
-# app.py (v5.0.0)
+# App Version: v5.2.0
 
 import streamlit as st
 from utils import signup_user, login_user, init_firebase, render_sidebar
