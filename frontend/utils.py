@@ -1,4 +1,4 @@
-# utils.py (v5.2.0)
+# utils.py (v5.3.0-rc1)
 
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,7 @@ import sys
 import numpy_financial as npf
 import pytz 
 from typing import Dict, List, Tuple, Optional
-from .config import APP_VERSION # <--- 從 config.py 引用
+from frontend.config import APP_VERSION # <--- 從 config.py 引用
 
 
 # 設定日誌系統

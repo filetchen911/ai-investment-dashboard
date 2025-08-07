@@ -1,12 +1,12 @@
 # pages/30_debt_management.py
-# App Version: v5.2.0
+# App Version: v5.3.0-rc1
 # Description: Final UX/UI refinement for the debt management module.
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from firebase_admin import firestore
-from ..utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot, recalculate_single_loan
+from frontend.utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot, recalculate_single_loan
 
 render_sidebar()
 

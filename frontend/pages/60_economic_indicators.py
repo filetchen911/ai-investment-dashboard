@@ -1,11 +1,11 @@
-# App Version: v5.2.0
+# App Version: v5.3.0-rc1
 
 import streamlit as st
 import pandas as pd
 import datetime
 import time
 
-from ..utils import (
+from frontend.utils import (
     init_firebase, 
     load_latest_economic_data, 
     render_sidebar,

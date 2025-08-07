@@ -4,7 +4,7 @@ import streamlit as st
 import datetime
 import time
 
-from ..utils import (
+from frontend.utils import (
     init_firebase, 
     load_latest_insights, 
     render_sidebar,

@@ -1,5 +1,5 @@
 # pages/10_asset_overview.py
-# App Version: v5.2.0
+# App Version: v5.3.0-rc1
 # Description: Refactored to use the central calculate_asset_metrics function from utils.
 
 
@@ -9,7 +9,7 @@ import numpy as np
 import datetime
 import plotly.express as px
 from firebase_admin import firestore
-from ..utils import (
+from frontend.utils import (
     render_sidebar,
     init_firebase, 
     update_quotes_manually, 

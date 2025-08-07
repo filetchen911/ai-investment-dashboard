@@ -1,11 +1,11 @@
 # pages/40_financial_dashboard.py
-# App Version: v5.2.0
+# App Version: v5.3.0-rc1
 # Description: Final enhanced version with multiple charts, toggles, and detailed metrics.
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from ..utils import (
+from frontend.utils import (
     render_sidebar,    
     init_firebase,
     load_user_assets_from_firestore,

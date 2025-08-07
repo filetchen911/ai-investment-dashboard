@@ -1,8 +1,8 @@
-# App Version: v5.2.0
+# App Version: v5.3.0-rc1
 
 import streamlit as st
-from .utils import signup_user, login_user, init_firebase, render_sidebar
-from .config import APP_VERSION # <--- 從 config.py 引用
+from frontend.utils import signup_user, login_user, init_firebase, render_sidebar
+from frontend.config import APP_VERSION # <--- 從 config.py 引用
 
 # --- 初始化 ---
 # st.cache_resource 確保 Firebase 只被初始化一次
