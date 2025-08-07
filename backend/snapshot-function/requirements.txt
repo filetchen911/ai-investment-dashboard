@@ -1,0 +1,7 @@
+# requirements.txt for snapshot-function
+functions-framework>=3.0.0
+firebase-admin>=6.0.0
+yfinance
+pandas
+requests
+pytz

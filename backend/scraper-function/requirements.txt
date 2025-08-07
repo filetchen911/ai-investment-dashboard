@@ -1,0 +1,8 @@
+# file: scraper-function/requirements.txt
+functions-framework>=3.0.0
+firebase-admin>=6.0.0
+fredapi==0.5.1
+pandas
+yfinance
+dbnomics
+pytz

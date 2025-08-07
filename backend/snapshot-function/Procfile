@@ -1,0 +1,2 @@
+# Procfile for snapshot-function
+web: functions-framework --target=create_portfolio_snapshot

@@ -1,0 +1,6 @@
+# requirements.txt for news-function (v5.2.0)
+functions-framework==3.9.2
+firebase-admin==7.0.0
+google-generativeai==0.8.5
+feedparser==6.0.11
+requests==2.32.4

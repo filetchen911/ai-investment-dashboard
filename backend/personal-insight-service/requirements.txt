@@ -1,0 +1,5 @@
+# file: personal-insight-service/requirements.txt
+# Dependencies for the Personal Insight Service (v5.2.0)
+functions-framework==3.9.2
+firebase-admin==7.0.0
+pytz==2024.1

@@ -1,0 +1,7 @@
+# requirements.txt
+
+functions-framework==3.*
+firebase-admin==6.*
+yfinance
+twstock
+requests

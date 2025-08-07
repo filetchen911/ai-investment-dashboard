@@ -1,0 +1,2 @@
+
+web: functions-framework --target=generate_general_analysis
