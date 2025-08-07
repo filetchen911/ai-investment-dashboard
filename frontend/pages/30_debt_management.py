@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from firebase_admin import firestore
-from utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot, recalculate_single_loan
+from frontend.utils import init_firebase, load_user_liabilities, calculate_loan_payments, render_sidebar, calculate_current_debt_snapshot, recalculate_single_loan
 
 render_sidebar()
 

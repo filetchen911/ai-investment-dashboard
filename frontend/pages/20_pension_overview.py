@@ -8,7 +8,7 @@ import plotly.express as px
 from datetime import datetime
 from firebase_admin import firestore
 # --- [v5.0.0 修正] 從 utils 引用所有核心函數 ---
-from utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, load_pension_data, render_sidebar, RetirementCalculator
+from frontend.utils import init_firebase, get_full_retirement_analysis, load_retirement_plan, load_pension_data, render_sidebar, RetirementCalculator
 
 render_sidebar()
 
