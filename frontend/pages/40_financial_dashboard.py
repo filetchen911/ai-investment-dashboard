@@ -5,7 +5,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import (
+from ..utils import (
     render_sidebar,    
     init_firebase,
     load_user_assets_from_firestore,

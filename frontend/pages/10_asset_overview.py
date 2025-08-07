@@ -9,7 +9,7 @@ import numpy as np
 import datetime
 import plotly.express as px
 from firebase_admin import firestore
-from utils import (
+from ..utils import (
     render_sidebar,
     init_firebase, 
     update_quotes_manually, 

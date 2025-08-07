@@ -16,7 +16,7 @@ import sys
 import numpy_financial as npf
 import pytz 
 from typing import Dict, List, Tuple, Optional
-from config import APP_VERSION # <--- 從 config.py 引用
+from .config import APP_VERSION # <--- 從 config.py 引用
 
 
 # 設定日誌系統
