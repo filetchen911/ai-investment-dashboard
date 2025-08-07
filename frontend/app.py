@@ -4,19 +4,17 @@
 import sys
 import os
 
-# 獲取當前 app.py 檔案的絕對路徑
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# 透過 .. 返回上一層目錄，取得 frontend/ 的父目錄，也就是專案根目錄
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
+# 獲取當前 app.py 檔案所在的目錄 (也就是 'frontend/' 目錄)
+app_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 檢查專案根目錄是否已在 Python 的搜尋路徑中，若無則加入
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# 將這個目錄強制加入到 Python 的搜尋路徑列表的最前面
+if app_dir not in sys.path:
+    sys.path.insert(0, app_dir)
 # --- [修正結束] ---
 
 import streamlit as st
-from frontend.utils import signup_user, login_user, init_firebase, render_sidebar
-from frontend.config import APP_VERSION # <--- 從 config.py 引用
+from utils import signup_user, login_user, init_firebase, render_sidebar
+from config import APP_VERSION # <--- 從 config.py 引用
 
 # --- 初始化 ---
 # st.cache_resource 確保 Firebase 只被初始化一次
