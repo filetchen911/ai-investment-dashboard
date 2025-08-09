@@ -1,22 +1,8 @@
 # App Version: v5.3.0-rc1
 
-# --- [v5.3.0 最終修正] 解決 Monorepo 在 Streamlit Cloud 上的路徑問題 ---
-import sys
-import os
-
-# 獲取當前 app.py 檔案所在的目錄 (e.g., /mount/src/ai-investment-dashboard/frontend)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# 透過 '..' 返回上一層，取得專案的根目錄 (e.g., /mount/src/ai-investment-dashboard)
-project_root = os.path.abspath(os.path.join(current_dir, '..'))
-
-# 將專案根目錄強制加入到 Python 的搜尋路徑列表的最前面
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-# --- [修正結束] ---
-
 import streamlit as st
-from frontend.utils import signup_user, login_user, init_firebase, render_sidebar
-from frontend.config import APP_VERSION # <--- 從 config.py 引用
+from utils import signup_user, login_user, init_firebase, render_sidebar
+from config import APP_VERSION # <--- 從 config.py 引用
 
 # --- 初始化 ---
 # st.cache_resource 確保 Firebase 只被初始化一次
