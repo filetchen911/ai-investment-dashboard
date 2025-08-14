@@ -1,4 +1,4 @@
-# App Version: v5.3.0-rc1
+# App Version: v5.3.0-rc3
 
 import streamlit as st
 from utils import signup_user, login_user, init_firebase, render_sidebar
@@ -30,8 +30,11 @@ def main():
         st.title("📈 歡迎來到您的 AI 投資儀表板")
         st.info("👈 請從左側側邊欄選擇您要查看的頁面。")
         st.markdown("---")
-        # --- [v5.0.0] 更新頁面連結與結構 ---
-        st.subheader("核心功能")
+        
+        # [v5.3.0-rc3 修正] 更新主頁連結以匹配新的頁面結構
+        
+        # 區塊 1: 財務自由儀表板
+        st.subheader("財務自由儀表板")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.page_link("pages/10_asset_overview.py", label="資產總覽", icon="📊")
@@ -40,14 +43,19 @@ def main():
         with c3:
             st.page_link("pages/30_debt_management.py", label="債務管理", icon="💳")
         with c4:
-            st.page_link("pages/40_financial_dashboard.py", label="財務自由儀表板", icon="🏁")
+            # 更新連結與標籤
+            st.page_link("pages/40_cashflow_simulator.py", label="現金流模擬器", icon="🌊")
+
         st.markdown("---")
-        st.subheader("智慧洞察")
+        
+        # 區塊 2: 週期投資儀表板
+        st.subheader("週期投資儀表板")
         c1, c2 = st.columns(2)
         with c1:
             st.page_link("pages/50_ai_insights.py", label="AI 每日洞察", icon="💡")
         with c2:
-            st.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")         
+            # 新增指向新頁面的連結
+            st.page_link("pages/70_cyclical_investing_model.py", label="週期投資策略模擬器", icon="📈")      
     else:
         st.info("👋 請從左側側邊欄登入或註冊，以開始使用。")
 

@@ -1,2 +1,2 @@
 # file: frontend/config.py
-APP_VERSION = "v5.3.0-rc3"
+APP_VERSION = "v5.3.0-rc4"
