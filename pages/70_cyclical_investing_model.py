@@ -1,4 +1,4 @@
-# file: pages/70_investment_model.py
+# file: pages/70_cyclical_investing_model.py
 
 import streamlit as st
 import pandas as pd
@@ -7,7 +7,7 @@ from utils import render_sidebar, load_latest_model_data
 st.set_page_config(layout="wide")
 render_sidebar()
 
-st.title("💡 投資策略模型儀表板")
+st.title("📈 週期投資策略模擬器")
 
 # --- 讀取數據 ---
 model_data_doc = load_latest_model_data()

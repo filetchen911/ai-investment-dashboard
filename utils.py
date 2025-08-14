@@ -149,9 +149,6 @@ def update_quotes_manually():
 def render_sidebar():
     if 'user_id' not in st.session_state:
         st.sidebar.header("歡迎使用")
-        
-        # --- [v5.0.0 修正] ---
-        # 在需要時，才初始化並取得 db 和 firebase_config
         db, firebase_config = init_firebase()
 
         choice = st.sidebar.radio("請選擇操作", ["登入", "註冊"], horizontal=True)
@@ -182,12 +179,20 @@ def render_sidebar():
 
         # --- [v5.0.0 修正] 手動建立側邊欄導覽 ---
         st.sidebar.markdown("---")
+        # 區塊 1: 財務自由儀表板
+        st.sidebar.markdown("#### 財務自由儀表板")
         st.sidebar.page_link("pages/10_asset_overview.py", label="資產總覽", icon="📊")
         st.sidebar.page_link("pages/20_pension_overview.py", label="退休金總覽", icon="🏦")
         st.sidebar.page_link("pages/30_debt_management.py", label="債務管理", icon="💳")
-        st.sidebar.page_link("pages/40_financial_dashboard.py", label="財務自由儀表板", icon="🏁")
+        st.sidebar.page_link("pages/40_cashflow_simulator.py", label="現金流模擬器", icon="🌊") # <-- 已更新
+
+        st.sidebar.markdown("---")
+
+        # 區塊 2: 週期投資儀表板
+        st.sidebar.markdown("#### 週期投資儀表板")
         st.sidebar.page_link("pages/50_ai_insights.py", label="AI 每日洞察", icon="💡")
-        st.sidebar.page_link("pages/60_economic_indicators.py", label="關鍵經濟指標", icon="📈")
+        st.sidebar.page_link("pages/70_cyclical_investing_model.py", label="週期投資策略模擬器", icon="📈") # <-- 已新增
+
         st.sidebar.markdown("---")
         st.sidebar.caption(f"App Version: {APP_VERSION}")
 

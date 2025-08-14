@@ -1,5 +1,5 @@
-# pages/40_financial_dashboard.py
-# App Version: v5.3.0-rc1
+# pages/40_cashflow_simulator.py
+# App Version: v5.3.0-rc3
 # Description: Final enhanced version with multiple charts, toggles, and detailed metrics.
 
 import streamlit as st
@@ -18,7 +18,7 @@ render_sidebar()
 
 # --- 頁面配置 ---
 st.set_page_config(layout="wide")
-st.title("🏁 財務自由儀表板")
+st.title("💰 現金流模擬器")
 
 # --- 身份驗證與初始化 ---
 if 'user_id' not in st.session_state:
