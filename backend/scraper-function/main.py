@@ -81,6 +81,7 @@ def get_fred_indicators(fred_instance):
             if ticker_id in ['PCEPILFE', 'RSAFS']:
                 # 計算年增率
                 series = series.pct_change(periods=12) * 100
+                series = series.round(2) # [修正 3] 四捨五入到小數點後兩位
             elif ticker_id == 'PAYEMS':
                 # 計算月變動
                 series = series.diff()
@@ -88,8 +89,10 @@ def get_fred_indicators(fred_instance):
             series.dropna(inplace=True)
 
             # 單位換算 (僅針對非農和初領失業金)
-            if ticker_id in ['PAYEMS', 'ICSA']:
+            if ticker_id == 'PAYEMS': # 單位: 千人 -> 萬人
                 series = series / 10
+            elif ticker_id == 'ICSA': # 單位: 人 -> 萬人
+                series = series / 10000 # [修正 2] 使用正確的換算單位
 
             results[name] = series
             print(f"  ✅ 成功處理 FRED 指標: {name}")

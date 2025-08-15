@@ -9,6 +9,10 @@ render_sidebar()
 
 st.title("📈 週期投資策略模擬器")
 
+if 'user_id' not in st.session_state:
+    st.info("請先從主頁面登入，以使用此功能。")
+    st.stop()
+    
 # --- 讀取數據 ---
 model_data_doc = load_latest_model_data()
 
@@ -88,15 +92,36 @@ with st.expander("展開以查看詳細總經數據"):
     macro_tabs = st.tabs(["美國總經指標 (FRED)", "美國 ISM PMI 指標"])
     
     with macro_tabs[0]:
-        for name, data_dict in macro_fred.items():
-            if data_dict:
-                latest_date = sorted(data_dict.keys())[-1]
-                latest_value = data_dict[latest_date]
-                st.metric(label=name, value=latest_value)
+        if not macro_fred:
+            st.write("FRED 總經數據正在收集中...")
+        else:
+            fred_cols = st.columns(2)
+            # 將字典轉換為 DataFrame 以便繪圖
+            for i, (name, data_dict) in enumerate(macro_fred.items()):
+                with fred_cols[i % 2]:
+                    if data_dict:
+                        df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
+                        df.index = pd.to_datetime(df.index)
+                        df.sort_index(inplace=True)
+                        st.markdown(f"**{name}**")
+                        st.line_chart(df)
 
     with macro_tabs[1]:
         if macro_ism:
-            latest_date_ism = sorted(macro_ism.keys())[-1]
-            st.write(f"最新數據日期: {latest_date_ism}")
+        if not macro_ism:
+            st.write("ISM PMI 數據正在收集中...")
+        else:
             df_ism = pd.DataFrame.from_dict(macro_ism, orient='index').sort_index(ascending=False)
-            st.dataframe(df_ism.head(6)) # 顯示最近6個月的數據
+            
+            # 重新命名
+            df_ism.rename(columns={'就業': '僱傭指數', '庫存': '存貨'}, inplace=True)
+            
+            # 定義新的欄位順序
+            new_order = [
+                "非製造業 PMI", "製造業 PMI", "新訂單", "生產", 
+                "僱傭指數", "存貨", "客戶端存貨"
+            ]
+            # 過濾掉可能不存在的欄位，以避免錯誤
+            display_order = [col for col in new_order if col in df_ism.columns]
+            
+            st.dataframe(df_ism[display_order].head(12)) # 顯示最近12個月
