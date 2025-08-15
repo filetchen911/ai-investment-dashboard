@@ -107,7 +107,6 @@ with st.expander("展開以查看詳細總經數據"):
                         st.line_chart(df)
 
     with macro_tabs[1]:
-        if macro_ism:
         if not macro_ism:
             st.write("ISM PMI 數據正在收集中...")
         else:
