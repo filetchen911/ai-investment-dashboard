@@ -1,4 +1,4 @@
-# file: scraper-function/main.py (v5.3.0 - 模型整合版)
+# file: backend/scraper-function/main.py (v5.4.0-rc1 - 數據邏輯修正版)
 
 import os
 import firebase_admin
@@ -21,19 +21,18 @@ FRED_API_KEY = os.environ.get('FRED_API_KEY')
 pd.set_option('display.float_format', lambda x: '%.2f' % x)
 
 
-# --- Helper Function 1: yfinance 數據抓取 ---
+# --- 數據抓取與計算函式庫 ---
+
 def get_yfinance_data(tickers, period="10y"):
-    print(f"\n> 正在從 yfinance 抓取 {len(tickers)} 個市場的數據...")
+    print(f"\n> [yfinance] 正在抓取 {len(tickers)} 個市場的數據...")
     try:
-        data = yf.download(tickers, period=period, auto_adjust=True)
-        if data.empty: raise ValueError(f"未能抓取到任何 yfinance 數據 for tickers: {tickers}")
-        print(f"  ✅ 成功抓取 yfinance 數據。")
+        data = yf.download(tickers, period=period, auto_adjust=True, progress=False)
+        if data.empty: raise ValueError("yfinance 未返回任何數據")
+        print(f"  ✅ [yfinance] 成功抓取數據。")
         return data
     except Exception as e:
-        print(f"  ❌ 抓取 yfinance 數據時發生錯誤: {e}")
-        return None
+        print(f"  ❌ [yfinance] 抓取時發生錯誤: {e}"); return None
 
-# --- Helper Function 2: KDJ 指標計算 ---
 def calculate_kdj(price_data, time_period='W-FRI'):
     try:
         df = price_data.copy()
@@ -51,160 +50,281 @@ def calculate_kdj(price_data, time_period='W-FRI'):
     except Exception as e:
         print(f"  - ❌ 計算 {time_period} KDJ 時發生錯誤: {e}"); return None
 
-
-# --- Helper Function 3: [最終修正版] FRED 所有指標抓取 ---
-def get_fred_indicators(fred_instance):
+def get_fred_data(fred_instance):
     """
-    [最終版] 從 FRED 抓取並正確計算所有需要的總經指標。
+    [最終整合版] 從 FRED 統一抓取並計算所有模型需要的總經指標。
     """
-    print("\n> 正在從 FRED 抓取所有總經指標...")
+    print("\n> [FRED] 正在抓取所有總經指標...")
     
-    # [修正] 合併了舊指標與新指標，共六項
+    # [修正] 整合並去除了重複的 Ticker，只抓取原始數據
     fred_tickers = {
-        "核心 PCE 物價指數年增率 (%)": "PCEPILFE",
-        "非農就業人數變化 (萬人)": "PAYEMS",
-        "初領失業救濟金人數 (萬人)": "ICSA",
-        "失業率 (%)": "UNRATE",
-        "密大消費者信心指數": "UMCSENT",
-        "美國零售銷售年增率 (%)": "RSAFS"
+        "核心 PCE 物價指數": "PCEPILFE", "非農就業人數": "PAYEMS",
+        "初領失業救濟金人數": "ICSA", "失業率": "UNRATE",
+        "密大消費者信心指數": "UMCSENT", "零售銷售": "RSAFS",
+        "實質GDP季增年率(SAAR)": "A191RL1Q225SBEA", "聯邦基金利率": "FEDFUNDS",
+        "實質個人消費支出": "PCEC96", "FOMC利率點陣圖中位數": "FEDTARMD"
     }
     
-    results = {}
-    # 擴大抓取時間範圍到25個月前，以確保有足夠數據計算
-    start_date = pd.to_datetime('today') - pd.DateOffset(months=25)
+    raw_results = {}
+    start_date = pd.to_datetime('today') - pd.DateOffset(years=2)
     
+    # 步驟 1: 先抓取所有原始數據
     for name, ticker_id in fred_tickers.items():
         try:
-            series = fred_instance.get_series(ticker_id, observation_start=start_date)
-
-            # --- 針對不同指標進行客製化計算 ---
-            if ticker_id in ['PCEPILFE', 'RSAFS']:
-                # 計算年增率
-                series = series.pct_change(periods=12) * 100
-                series = series.round(2) # [修正 3] 四捨五入到小數點後兩位
-            elif ticker_id == 'PAYEMS':
-                # 計算月變動
-                series = series.diff()
-            
-            series.dropna(inplace=True)
-
-            # 單位換算 (僅針對非農和初領失業金)
-            if ticker_id == 'PAYEMS': # 單位: 千人 -> 萬人
-                series = series / 10
-            elif ticker_id == 'ICSA': # 單位: 人 -> 萬人
-                series = series / 10000 # [修正 2] 使用正確的換算單位
-
-            results[name] = series
-            print(f"  ✅ 成功處理 FRED 指標: {name}")
+            raw_results[name] = fred_instance.get_series(ticker_id, observation_start=start_date).dropna()
         except Exception as e:
-            print(f"  ❌ 處理 FRED 指標失敗: {name} - {e}")
-            results[name] = None
-    return results
+            print(f"  - ❌ 抓取 FRED 指標 {name} 失敗: {e}")
+            
+    # 步驟 2: 根據原始數據，計算我們需要的最終指標
+    final_results = {}
+    
+    # 需要計算年增率的指標
+    for name, raw_name in [("核心 PCE 物價指數年增率 (%)", "核心 PCE 物價指數"), 
+                           ("美國零售銷售年增率 (%)", "零售銷售"),
+                           ("實質個人消費支出年增率 (%)", "實質個人消費支出")]:
+        if raw_name in raw_results:
+            final_results[name] = (raw_results[raw_name].pct_change(periods=12) * 100).round(2)
 
-# --- Helper Function 4: DBnomics ISM 指標抓取 ---
-def get_ism_pmi_from_dbnomics():
-    print("\n> 正在從 DBnomics 抓取 ISM PMI 系列指標...")
-    series_map = {"製造業 PMI": "ISM/pmi/pm", "新訂單": "ISM/neword/in", "生產": "ISM/production/in", "就業": "ISM/employment/in", "庫存": "ISM/inventories/in", "非製造業 PMI": "ISM/nm-pmi/pm", "客戶端存貨": "ISM/cusinv/in"}
-    all_series = []
+    # 需要計算月變動的指標
+    if "非農就業人數" in raw_results:
+        final_results["非農就業人數變化 (萬人)"] = (raw_results["非農就業人數"].diff() / 10).round(2)
+
+    # 需要轉換單位的指標
+    if "初領失業救濟金人數" in raw_results:
+        final_results["初領失業救濟金人數 (萬人)"] = (raw_results["初領失業救濟金人數"] / 10000).round(2)
+
+    # 不需任何計算的指標，直接沿用
+    for name in ["失業率", "密大消費者信心指數", "實質GDP季增年率(SAAR)", "聯邦基金利率", "FOMC利率點陣圖中位數"]:
+         if name in raw_results:
+             final_results[name] = raw_results[name]
+
+    # 保留原始數據供 tech_model 使用
+    final_results["零售銷售_原始"] = raw_results.get("零售銷售")
+    final_results["實質個人消費支出_原始"] = raw_results.get("實質個人消費支出")
+
+    print(f"  ✅ [FRED] 成功處理了 {len(final_results)} 個最終指標。")
+    return final_results
+
+def get_dbnomics_data():
+    print("\n> [DBnomics] 正在抓取 ISM & OECD 指標...")
+    series_map = {
+        "ISM 製造業PMI": "ISM/pmi/pm", "新訂單": "ISM/neword/in", "客戶端存貨": "ISM/cusinv/in",
+        "OECD 美國領先指標": "OECD/DSD_STES@DF_CLI/USA.M.LI.IX._Z.AA.IX._Z.H"
+    }
+    results = {}
     for name, series_id in series_map.items():
         try:
             df = fetch_series(series_id)
             series = df.set_index('original_period')['value'].rename(name)
-            all_series.append(series)
+            results[name] = series
         except Exception:
-            print(f"  - 注意：抓取 {name} ({series_id}) 失敗，將跳過此項。")
-            continue
-    if not all_series: return None
-    try:
-        final_df = pd.concat(all_series, axis=1); 
-        final_df.index = pd.to_datetime(final_df.index)
-        final_df.index.name = "Date"
-        final_df.sort_index(inplace=True)
-        print(f"  ✅ 成功合併了 {len(all_series)} 個 ISM 指標的數據。")
-        return final_df.tail(12)
-        
-    except Exception as e:
-        print(f"  ❌ 合併 ISM 數據時失敗: {e}"); return None
+            print(f"  - 注意：抓取 {name} ({series_id}) 失敗，跳過。")
+    print(f"  ✅ [DBnomics] 成功處理了 {len(results)} 個指標。")
+    return results
 
-# --- Helper Function 5: [新增] 策略訊號判斷 ---
-def check_signals(kdj_weekly, kdj_monthly, vix, ism_pmi):
-    signals = {"mid_term_pullback": False, "inventory_cycle": False}
-    J_OVERSOLD = 20; VIX_FEAR = 25; PMI_CONTRACTION = 48
+def get_mag7_financials():
+    print("\n> [yfinance] 正在抓取 Mag7 & TSM 財報數據...")
+    mag7_symbols = ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'TSM']
+    financial_data = {}
+    for symbol in mag7_symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            financial_data[symbol] = {
+                'quarterly_financials': ticker.quarterly_financials,
+                'quarterly_cashflow': ticker.quarterly_cashflow
+            }
+        except Exception:
+            print(f"  - 注意：抓取 {symbol} 財報失敗，跳過。")
+    print(f"  ✅ [yfinance] 成功抓取了 {len(financial_data)} 家公司的財報。")
+    return financial_data
 
-    try:
-        latest_j_weekly = kdj_weekly['J'].iloc[-1]
-        latest_j_monthly = kdj_monthly['J'].iloc[-1]
-        latest_vix = vix.iloc[-1]
-        latest_pmi = ism_pmi['製造業 PMI'].iloc[-1]
+# --- 模型計算函式 ---
 
-        # 判斷中期回檔訊號
-        if latest_j_weekly < J_OVERSOLD and latest_vix > VIX_FEAR:
-            signals["mid_term_pullback"] = True
-
-        # 判斷庫存週期訊號
-        if latest_j_monthly < J_OVERSOLD and latest_vix > VIX_FEAR and latest_pmi < PMI_CONTRACTION:
-            signals["inventory_cycle"] = True
-
-    except (IndexError, TypeError) as e:
-        print(f"  - 訊號判斷時數據不足或出錯: {e}")
-    
+def run_j_vix_model(kdj_data, vix_data):
+    print("\n> [模型一] 正在執行 J值+VIX 擇時模型...")
+    signals = {}
+    J_OVERSOLD = 20; VIX_FEAR = 25
+    for market_name, kdj in kdj_data.items():
+        try:
+            latest_j_weekly = kdj['weekly']['J'].iloc[-1]
+            latest_j_monthly = kdj['monthly']['J'].iloc[-1]
+            latest_vix = vix_data['^VIX'].iloc[-1]
+            signals[market_name] = {
+                "mid_term_pullback": bool(latest_j_weekly < J_OVERSOLD and latest_vix > VIX_FEAR),
+                "inventory_cycle": bool(latest_j_monthly < J_OVERSOLD and latest_vix > VIX_FEAR)
+            }
+        except Exception:
+            signals[market_name] = {"mid_term_pullback": False, "inventory_cycle": False}
+    print("  ✅ [模型一] 執行完畢。")
     return signals
 
-# --- 主函式 (總指揮) ---
+def run_tech_model(financials, fred_data, dbnomics_data):
+    print("\n> [模型二] 正在執行美股科技股總經模型 (V7.3)...")
+    data = {}
+    scores = {"Mag7營收年增率": 0, "資本支出增長率": 0, "關鍵領先指標": 0, "資金面與流動性": 0, "GDP季增率": 0, "ISM製造業PMI": 0, "美國消費需求綜合": 0}
+    
+    try:
+        # 微觀-Mag7營收
+        total_curr_rev, total_prev_rev = 0, 0
+        for s in ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META']:
+            if s in financials and "Total Revenue" in financials[s]['quarterly_financials'].index:
+                rev = financials[s]['quarterly_financials'].loc["Total Revenue"]
+                if len(rev) >= 5: total_curr_rev += rev.iloc[0]; total_prev_rev += rev.iloc[4]
+        data['mag7_agg_revenue_growth'] = (total_curr_rev - total_prev_rev) / total_prev_rev if total_prev_rev > 0 else 0
+        if data['mag7_agg_revenue_growth'] >= 0.15: scores['Mag7營收年增率'] = 30
+        elif data['mag7_agg_revenue_growth'] >= 0.10: scores['Mag7營收年增率'] = 25
+        elif data['mag7_agg_revenue_growth'] >= 0.05: scores['Mag7營收年增率'] = 15
+        elif data['mag7_agg_revenue_growth'] >= 0: scores['Mag7營收年增率'] = 8
+
+        # 微觀-資本支出
+        total_curr_capex, total_prev_capex = 0, 0
+        for s in ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META']:
+             if s in financials and "Capital Expenditure" in financials[s]['quarterly_cashflow'].index:
+                capex = financials[s]['quarterly_cashflow'].loc["Capital Expenditure"]
+                if len(capex) >= 5: total_curr_capex += abs(capex.iloc[0]); total_prev_capex += abs(capex.iloc[4])
+        data['mag7_agg_capex_growth'] = (total_curr_capex - total_prev_capex) / total_prev_capex if total_prev_capex > 0 else 0
+        if data['mag7_agg_capex_growth'] >= 0.25: scores['資本支出增長率'] = 20
+        elif data['mag7_agg_capex_growth'] >= 0.15: scores['資本支出增長率'] = 16
+        elif data['mag7_agg_capex_growth'] >= 0.05: scores['資本支出增長率'] = 10
+        elif data['mag7_agg_capex_growth'] >= 0: scores['資本支出增長率'] = 5
+
+        # 微觀-關鍵領先指標
+        tsm_score = 0
+        if 'TSM' in financials and "Total Revenue" in financials['TSM']['quarterly_financials'].index:
+            rev = financials['TSM']['quarterly_financials'].loc["Total Revenue"]
+            data['tsm_growth'] = (rev.iloc[0] - rev.iloc[4]) / rev.iloc[4] if len(rev) >= 5 else 0
+            if data['tsm_growth'] >= 0.20: tsm_score = 6
+            elif data['tsm_growth'] >= 0.10: tsm_score = 4
+            elif data['tsm_growth'] >= 0: tsm_score = 2
+        oecd_cli = dbnomics_data.get("OECD 美國領先指標")
+        oecd_score = 0
+        if oecd_cli is not None:
+            data['oecd_cli_latest'] = oecd_cli.iloc[-1]
+            if data['oecd_cli_latest'] >= 101: oecd_score += 4
+            elif data['oecd_cli_latest'] >= 100.5: oecd_score += 3
+            elif data['oecd_cli_latest'] >= 100: oecd_score += 2
+            elif data['oecd_cli_latest'] >= 99.5: oecd_score += 1
+            if len(oecd_cli) >= 3 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2] and oecd_cli.iloc[-2] > oecd_cli.iloc[-3]: oecd_score += 2
+            elif len(oecd_cli) >= 2 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2]: oecd_score += 1
+        ism_diff = dbnomics_data.get("新訂單", pd.Series([0])).iloc[-1] - dbnomics_data.get("客戶端存貨", pd.Series([0])).iloc[-1]
+        data['ism_diff'] = ism_diff
+        ism_diff_score = 0
+        if ism_diff >= 10: ism_diff_score = 3
+        elif ism_diff >= 5: ism_diff_score = 2.5
+        elif ism_diff >= 0: ism_diff_score = 2
+        elif ism_diff >= -5: ism_diff_score = 1
+        scores['關鍵領先指標'] = tsm_score + oecd_score + ism_diff_score
+
+        # 總經-資金面
+        rate = fred_data.get('聯邦基金利率').iloc[-1]
+        data['current_fed_rate'] = rate
+        rate_level_score = 0
+        if rate < 3: rate_level_score = 6
+        elif rate < 4: rate_level_score = 5
+        elif rate < 5: rate_level_score = 3
+        elif rate < 6: rate_level_score = 2
+        dot_plot = fred_data.get('FOMC利率點陣圖中位數')
+        fomc_score = 0
+        if dot_plot is not None and len(dot_plot) >= 3:
+            change_bp = (dot_plot.iloc[-2] - rate) * 100
+            data['fomc_change_bp'] = change_bp
+            if change_bp < -200: fomc_score = 6
+            elif -200 <= change_bp <= -100: fomc_score = 5
+            elif -100 < change_bp < 0: fomc_score = 3
+            elif 0 <= change_bp <= 25: fomc_score = 2
+        scores['資金面與流動性'] = rate_level_score + fomc_score
+
+        # 總經-GDP
+        gdp = fred_data.get('實質GDP季增年率(SAAR)').iloc[-1]
+        data['gdp_growth'] = gdp
+        if gdp >= 3: scores['GDP季增率'] = 9
+        elif gdp >= 2: scores['GDP季增率'] = 7
+        elif gdp >= 1: scores['GDP季增率'] = 4
+        elif gdp >= 0: scores['GDP季增率'] = 2
+
+        # 總經-PMI
+        pmi = dbnomics_data.get("ISM 製造業PMI").iloc[-1]
+        data['ism_pmi'] = pmi
+        if pmi >= 55: scores['ISM製造業PMI'] = 8
+        elif pmi >= 52: scores['ISM製造業PMI'] = 6
+        elif pmi >= 50: scores['ISM製造業PMI'] = 4
+        elif pmi >= 47: scores['ISM製造業PMI'] = 2
+        
+        # 總經-消費
+        # [修正] 直接使用已計算好的年增率數據
+        retail_yoy = fred_data.get('美國零售銷售年增率 (%)').iloc[-1] / 100 # 轉為小數
+        pce_yoy = fred_data.get('實質個人消費支出年增率 (%)').iloc[-1] / 100
+        data['retail_yoy'] = retail_yoy
+        data['pce_yoy'] = pce_yoy
+        retail_score, pce_score = 0, 0
+        if retail_yoy > 0.05: retail_score = 3.6
+        elif retail_yoy > 0.02: retail_score = 2.5
+        elif retail_yoy >= 0: retail_score = 1.0
+        if pce_yoy > 0.03: pce_score = 2.4
+        elif pce_yoy > 0.02: pce_score = 1.8
+        elif pce_yoy >= 0: pce_score = 0.8
+        scores['美國消費需求綜合'] = retail_score + pce_score
+
+    except Exception as e:
+        print(f"  - ❌ [模型二] 計算時發生錯誤: {e}")
+
+    total_score = sum(scores.values())
+    if total_score >= 80: scenario = "情境1: 主升段"; position = "70-80%";
+    elif total_score >= 65: scenario = "情境2: 末升段"; position = "50-70%";
+    elif total_score >= 45: scenario = "情境3: 初跌段"; position = "40-60%";
+    elif total_score >= 25: scenario = "情境4: 主跌段"; position = "60-75%";
+    else: scenario = "情境5: 觸底/初升段"; position = "75-80%";
+    
+    print("  ✅ [模型二] 執行完畢。")
+    return {"total_score": total_score, "scenario": scenario, "position": position, "scores_breakdown": scores, "underlying_data": data}
+
+
 @functions_framework.http
 def run_scraper(request):
-    print(f"--- 投資模型數據抓取器 (v{__version__}) 開始執行 ---")
+    print(f"--- 數據與模型引擎 (v{__version__}) 開始執行 ---")
     
-    final_data_to_store = {"signals": {}}
-    
-    # 1. 抓取 yfinance 數據 (市場價格 & 美國 VIX)
+    # 1. 數據抓取
     market_tickers = {"台股加權指數": "^TWII", "標普500指數": "^GSPC", "納斯達克100指數": "^IXIC", "費城半導體指數": "^SOX"}
-    all_price_data = get_yfinance_data(list(market_tickers.values()) + ['^VIX'])
+    yfinance_data = get_yfinance_data(list(market_tickers.values()) + ['^VIX'])
+    financial_data = get_mag7_financials()
+    fred = Fred(api_key=FRED_API_KEY)
+    fred_data = get_fred_data(fred)
+    dbnomics_data = get_dbnomics_data()
 
-    # 2. 抓取 FRED & DBnomics 數據
-    try:
-        fred = Fred(api_key=FRED_API_KEY)
-        fred_data = get_fred_indicators(fred)
-    except Exception as e:
-        print(f"  ❌ FRED 初始化失敗: {e}"); fred_data = {}
-    ism_data = get_ism_pmi_from_dbnomics()
-
-    # 3. 為每個市場計算指標與訊號
-    if all_price_data is not None:
-        final_data_to_store['kdj_indicators'] = {}
-        us_vix_series = all_price_data['Close']['^VIX'].dropna()
-        
+    # 2. 指標計算
+    kdj_indicators = {}
+    if yfinance_data is not None:
         for name, ticker in market_tickers.items():
-            market_price_df = all_price_data.loc[:, (slice(None), ticker)]
+            market_price_df = yfinance_data.loc[:, (slice(None), ticker)]
             market_price_df.dropna(how='all', inplace=True)
-            kdj_weekly = calculate_kdj(market_price_df, 'W-FRI')
-            kdj_monthly = calculate_kdj(market_price_df, 'ME')
-            final_data_to_store['kdj_indicators'][name] = {
-                "weekly": {d.strftime('%Y-%m-%d'): v for d, v in kdj_weekly.tail(3).to_dict('index').items()} if kdj_weekly is not None else None,
-                "monthly": {d.strftime('%Y-%m-%d'): v for d, v in kdj_monthly.tail(3).to_dict('index').items()} if kdj_monthly is not None else None,
+            kdj_indicators[name] = {
+                "weekly": calculate_kdj(market_price_df, 'W-FRI'),
+                "monthly": calculate_kdj(market_price_df, 'ME')
             }
-            
-            # [新增] 執行訊號判斷
-            if kdj_weekly is not None and kdj_monthly is not None and ism_data is not None:
-                final_data_to_store['signals'][name] = check_signals(kdj_weekly, kdj_monthly, us_vix_series, ism_data)
 
-        final_data_to_store['sentiment_vix_us'] = {d.strftime('%Y-%m-%d'): v for d, v in us_vix_series.tail().to_dict().items()}
+    # 3. 模型運算
+    signals_j_vix = run_j_vix_model(kdj_indicators, yfinance_data['Close'])
+    signals_tech_model = run_tech_model(financial_data, fred_data, dbnomics_data)
 
-    # 4. 整理總經數據
-    final_data_to_store['macro_fred'] = {k: {d.strftime('%Y-%m-%d'): val for d, val in v.to_dict().items()} for k, v in fred_data.items() if v is not None}
-    if ism_data is not None:
-        final_data_to_store['macro_ism_pmi'] = {d.strftime('%Y-%m-%d'): v for d, v in ism_data.to_dict('index').items()}
-
+    # 4. 組合最終數據包
+    final_data_to_store = {
+        "j_vix_model": {"signals": signals_j_vix, "latest_vix": yfinance_data['Close']['^VIX'].dropna().iloc[-1] if '^VIX' in yfinance_data['Close'].columns else None},
+        "tech_model": signals_tech_model,
+        "raw_data": {
+            "kdj": {m: {"weekly": {d.strftime('%Y-%m-%d'): v for d, v in k['weekly'].tail(3).to_dict('index').items()}, "monthly": {d.strftime('%Y-%m-%d'): v for d, v in k['monthly'].tail(3).to_dict('index').items()}} for m, k in kdj_indicators.items() if k.get('weekly') is not None and k.get('monthly') is not None},
+            "fred": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.tail(13).to_dict().items()} for k, v in fred_data.items() if v is not None},
+            "dbnomics": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.to_dict().items()} for k, v in dbnomics_data.items() if v is not None}
+        }
+    }
+    
     # 5. 統一寫入 Firestore
     db = firestore.client()
     taipei_tz = pytz.timezone('Asia/Taipei')
     doc_id = datetime.datetime.now(taipei_tz).strftime("%Y-%m-%d")
     doc_ref = db.collection('daily_model_data').document(doc_id)
     expire_at_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
-    
     firestore_document = { "updated_at": firestore.SERVER_TIMESTAMP, "expireAt": expire_at_time, "version": __version__, "data": final_data_to_store }
     doc_ref.set(firestore_document)
     
-    success_message = f"成功抓取、計算並儲存所有模型數據到 Firestore 的文件 '{doc_id}' 中！"
-    print(f"--- {success_message} ---")
-    return {"status": "success", "message": success_message, "version": __version__}, 200
+    print(f"--- 成功將所有模型數據寫入 Firestore 文件 '{doc_id}' ---")
+    return {"status": "success", "version": __version__}

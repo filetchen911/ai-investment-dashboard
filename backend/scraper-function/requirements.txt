@@ -1,8 +1,11 @@
-# file: scraper-function/requirements.txt
+# file: backend/scraper-function/requirements.txt
 functions-framework>=3.0.0
 firebase-admin>=6.0.0
 fredapi==0.5.1
 pandas
 yfinance
 dbnomics
+requests
+beautifulsoup4
+lxml
 pytz
