@@ -177,10 +177,49 @@ with tab2:
                 if not raw_dbnomics_data:
                     st.write("ISM & OECD 數據正在收集中...")
                 else:
-                    # 分開處理，因為它們的結構可能不同
-                    ism_df = pd.DataFrame.from_dict(raw_dbnomics_data.get('ISM 製造業PMI', {}), orient='index') # 假設
-                    oecd_df = pd.DataFrame.from_dict(raw_dbnomics_data.get('OECD 美國領先指標', {}), orient='index')
-
-                    st.markdown("**美國 ISM PMI 系列指標 (最近12個月)**")
-                    # (此處未來可以加入更多 ISM 圖表)
-                    st.dataframe(ism_df)
+                    # 將所有 DBnomics 指標轉換為 DataFrame
+                    dbnomics_dfs = {}
+                    for name, data_dict in raw_dbnomics_data.items():
+                        if data_dict:
+                            df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
+                            df.index = pd.to_datetime(df.index)
+                            df.sort_index(inplace=True)
+                            dbnomics_dfs[name] = df
+                    
+                    # 建立兩欄佈局
+                    db_cols = st.columns(2)
+                    
+                    # 依序顯示每個指標的卡片
+                    for i, (name, df) in enumerate(dbnomics_dfs.items()):
+                        with db_cols[i % 2]:
+                            with st.container(border=True):
+                                st.markdown(f"**{name}**")
+                                latest_value = df['Value'].iloc[-1] if not df.empty else "N/A"
+                                previous_value = df['Value'].iloc[-2] if len(df) >= 2 else None
+                                delta = (latest_value - previous_value) if previous_value is not None else None
+                                st.metric(
+                                    label=f"最新 ({df.index[-1].strftime('%Y-%m')})", 
+                                    value=f"{latest_value:,.2f}",
+                                    delta=f"{delta:,.2f}" if delta is not None else None
+                                )
+                                st.line_chart(df, height=150)
+                    
+                    # 額外計算並顯示 OECD 年增率
+                    if "OECD 美國領先指標" in dbnomics_dfs:
+                        with db_cols[(i + 1) % 2]: # 放在下一個欄位
+                            with st.container(border=True):
+                                oecd_df = dbnomics_dfs["OECD 美國領先指標"]
+                                oecd_yoy = oecd_df.pct_change(12) * 100
+                                oecd_yoy.dropna(inplace=True)
+                                
+                                st.markdown("**OECD 美國領先指標 (年增率 %)**")
+                                latest_yoy = oecd_yoy['Value'].iloc[-1] if not oecd_yoy.empty else "N/A"
+                                previous_yoy = oecd_yoy['Value'].iloc[-2] if len(oecd_yoy) >= 2 else None
+                                delta_yoy = (latest_yoy - previous_yoy) if previous_yoy is not None else None
+                                
+                                st.metric(
+                                    label=f"最新年增率 ({oecd_yoy.index[-1].strftime('%Y-%m')})",
+                                    value=f"{latest_yoy:,.2f}%",
+                                    delta=f"{delta_yoy:,.2f}" if delta_yoy is not None else None
+                                )
+                                st.line_chart(oecd_yoy, height=150)
