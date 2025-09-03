@@ -1,4 +1,4 @@
-# file: pages/70_cyclical_investing_model.py (v5.4.0-rc1)
+# file: pages/70_cyclical_investing_model.py (v5.4.0 - 視覺化優化版)
 
 import streamlit as st
 import pandas as pd
@@ -88,7 +88,7 @@ with tab1:
 
 # --- 頁籤二：科技股總經儀表板 ---
 with tab2:
-    if not tech_model_data:
+    if not tech_model_data or not tech_model_data.get('total_score'):
         st.warning("科技股總經模型數據正在收集中...")
     else:
         st.header("🎯 當前市場總評")
@@ -129,6 +129,8 @@ with tab2:
 
         with st.expander("🔍 展開以查看所有指標原始數據"):
             underlying_data = tech_model_data.get('underlying_data', {})
+            raw_fred_data = raw_data.get('fred', {})
+            raw_dbnomics_data = raw_data.get('dbnomics', {})
             
             st.write("#### 核心計算值")
             u1, u2, u3, u4 = st.columns(4)
@@ -139,15 +141,46 @@ with tab2:
             
             st.markdown("---")
             
-            exp_tabs = st.tabs(["FRED 數據", "ISM & DBnomics 數據"])
+            exp_tabs = st.tabs(["FRED 數據", "ISM & OECD 數據"])
+            
+            # --- [v5.4.0 視覺化優化] FRED 指標 ---
             with exp_tabs[0]:
-                st.write("#### FRED 總經指標 (最新值)")
-                fred_raw = raw_data.get('fred', {})
-                fred_disp = {k: v[sorted(v.keys())[-1]] for k, v in fred_raw.items() if v}
-                st.json(fred_disp)
-
+                if not raw_fred_data:
+                    st.write("FRED 總經數據正在收集中...")
+                else:
+                    fred_cols = st.columns(2)
+                    fred_data_processed = {}
+                    for name, data_dict in raw_fred_data.items():
+                        if data_dict:
+                            df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
+                            df.index = pd.to_datetime(df.index)
+                            df.sort_index(inplace=True)
+                            fred_data_processed[name] = df
+                    
+                    for i, (name, df) in enumerate(fred_data_processed.items()):
+                        with fred_cols[i % 2]:
+                            with st.container(border=True):
+                                st.markdown(f"**{name}**")
+                                latest_value = df['Value'].iloc[-1] if not df.empty else "N/A"
+                                previous_value = df['Value'].iloc[-2] if len(df) >= 2 else None
+                                delta = (latest_value - previous_value) if previous_value is not None else None
+                                
+                                st.metric(
+                                    label=f"最新 ({df.index[-1].strftime('%Y-%m')})", 
+                                    value=f"{latest_value:,.2f}",
+                                    delta=f"{delta:,.2f}" if delta is not None else None
+                                )
+                                st.line_chart(df, height=150)
+            
+            # --- [v5.4.0 視覺化優化] ISM & OECD 指標 ---
             with exp_tabs[1]:
-                st.write("#### ISM & OECD 指標 (最新值)")
-                dbnomics_raw = raw_data.get('dbnomics', {})
-                dbnomics_disp = {k: v[sorted(v.keys())[-1]] for k, v in dbnomics_raw.items() if v}
-                st.json(dbnomics_disp)
+                if not raw_dbnomics_data:
+                    st.write("ISM & OECD 數據正在收集中...")
+                else:
+                    # 分開處理，因為它們的結構可能不同
+                    ism_df = pd.DataFrame.from_dict(raw_dbnomics_data.get('ISM 製造業PMI', {}), orient='index') # 假設
+                    oecd_df = pd.DataFrame.from_dict(raw_dbnomics_data.get('OECD 美國領先指標', {}), orient='index')
+
+                    st.markdown("**美國 ISM PMI 系列指標 (最近12個月)**")
+                    # (此處未來可以加入更多 ISM 圖表)
+                    st.dataframe(ism_df)
