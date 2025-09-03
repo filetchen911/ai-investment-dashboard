@@ -1224,25 +1224,30 @@ def trigger_scraper() -> bool:
         return False
 
 
-# --- [v5.3.0 新增] ---
+# --- [v5.4.0 修正] ---
 @st.cache_data(ttl=900)
 def load_latest_model_data():
-    """從 Firestore 讀取最新的模型數據包 (daily_model_data)。"""
+    """
+    [v5.4.0] 從 Firestore 讀取最新的模型數據包 (daily_model_data)。
+    會先嘗試讀取今天的數據，如果失敗則讀取最新的一份。
+    """
     db, _ = init_firebase()
     try:
-        # 假設我們總是讀取今天的數據
         taipei_tz = pytz.timezone('Asia/Taipei')
         doc_id = datetime.now(taipei_tz).strftime("%Y-%m-%d")
         
         doc_ref = db.collection('daily_model_data').document(doc_id)
         doc = doc_ref.get()
         if doc.exists:
+            print(f"  > [Utils] 成功讀取到今日 ({doc_id}) 的模型數據。")
             return doc.to_dict()
         else:
             # 如果今天的文件不存在，嘗試讀取最新的一份
+            print(f"  > [Utils] 未找到今日數據，嘗試讀取最新的一份...")
             query = db.collection('daily_model_data').order_by('updated_at', direction=firestore.Query.DESCENDING).limit(1)
             docs = list(query.stream())
             if docs:
+                print(f"  > [Utils] 成功讀取到最新的一份歷史數據: {docs[0].id}")
                 return docs[0].to_dict()
             return None # 如果集合完全是空的
             

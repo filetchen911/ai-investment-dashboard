@@ -106,21 +106,33 @@ def get_fred_data(fred_instance):
     return final_results
 
 def get_dbnomics_data():
+    """
+    [v5.4.0 修正版] 從 DBnomics 抓取 ISM & OECD 指標，並確保日期索引為 datetime 格式。
+    """
     print("\n> [DBnomics] 正在抓取 ISM & OECD 指標...")
     series_map = {
         "ISM 製造業PMI": "ISM/pmi/pm", "新訂單": "ISM/neword/in", "客戶端存貨": "ISM/cusinv/in",
         "OECD 美國領先指標": "OECD/DSD_STES@DF_CLI/USA.M.LI.IX._Z.AA.IX._Z.H"
     }
     results = {}
+
+    # 定義我們要抓取的起始日期 (兩年前)
+    start_date = pd.to_datetime('today') - pd.DateOffset(years=2)
+
     for name, series_id in series_map.items():
         try:
             df = fetch_series(series_id)
-            series = df.set_index('original_period')['value'].rename(name)
+            series = df.set_index('original_period')['value'].rename(name)        
+            series.index = pd.to_datetime(series.index)
+
+            # 在收到完整數據後，只選取在 start_date 之後的數據
+            series = series[series.index >= start_date]
+
             results[name] = series
         except Exception:
             print(f"  - 注意：抓取 {name} ({series_id}) 失敗，跳過。")
     print(f"  ✅ [DBnomics] 成功處理了 {len(results)} 個指標。")
-    return results
+    return results    
 
 def get_mag7_financials():
     print("\n> [yfinance] 正在抓取 Mag7 & TSM 財報數據...")

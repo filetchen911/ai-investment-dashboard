@@ -1,7 +1,9 @@
-# file: pages/70_cyclical_investing_model.py
+# file: pages/70_cyclical_investing_model.py (v5.4.0-rc1)
 
 import streamlit as st
 import pandas as pd
+import datetime
+import pytz
 from utils import render_sidebar, load_latest_model_data
 
 st.set_page_config(layout="wide")
@@ -9,118 +11,143 @@ render_sidebar()
 
 st.title("📈 週期投資策略模擬器")
 
+# --- 身份驗證檢查 ---
 if 'user_id' not in st.session_state:
     st.info("請先從主頁面登入，以使用此功能。")
     st.stop()
-    
-# --- 讀取數據 ---
+
+# --- 讀取並解析數據 ---
 model_data_doc = load_latest_model_data()
 
 if not model_data_doc:
-    st.info("模型數據正在生成中，請稍後再試。")
+    st.info("模型數據正在生成中，或後端服務尚未執行成功。請稍後再試。")
     st.stop()
 
 # --- 顯示數據更新時間 ---
-updated_at = model_data_doc.get('updated_at', 'N/A')
+updated_at = model_data_doc.get('updated_at')
 if hasattr(updated_at, 'strftime'):
-    st.caption(f"上次數據更新時間: {updated_at.strftime('%Y-%m-%d %H:%M')} (UTC)")
+    taipei_tz = pytz.timezone('Asia/Taipei')
+    taipei_time = updated_at.astimezone(taipei_tz)
+    st.caption(f"上次數據更新時間: {taipei_time.strftime('%Y-%m-%d %H:%M')} (台北時間)")
 
-# --- 1. 市場進場訊號總覽 ---
-st.subheader("一、市場進場訊號總覽")
-
-signals = model_data_doc.get('data', {}).get('signals', {})
-markets = ["標普500指數", "納斯達克100指數", "費城半導體指數", "台股加權指數"]
-
-cols = st.columns(len(markets))
-
-for i, market_name in enumerate(markets):
-    with cols[i]:
-        with st.container(border=True):
-            st.markdown(f"**{market_name}**")
-            market_signals = signals.get(market_name, {})
-            
-            mid_term_signal = market_signals.get('mid_term_pullback', False)
-            inventory_cycle_signal = market_signals.get('inventory_cycle', False)
-
-            if mid_term_signal or inventory_cycle_signal:
-                st.markdown("🟢 <span style='color:green; font-weight:bold;'>觸發進場訊號</span>", unsafe_allow_html=True)
-                if mid_term_signal:
-                    st.write(" - 中期回檔訊號")
-                if inventory_cycle_signal:
-                    st.write(" - 庫存週期訊號")
-            else:
-                st.markdown("🔴 <span style='color:red;'>未觸發訊號</span>", unsafe_allow_html=True)
-
-# --- 2. 核心指標狀態 ---
-st.subheader("二、核心指標狀態")
-
-kdj_data = model_data_doc.get('data', {}).get('kdj_indicators', {})
-vix_data = model_data_doc.get('data', {}).get('sentiment_vix_us', {})
-latest_vix_date = sorted(vix_data.keys())[-1] if vix_data else 'N/A'
-latest_vix_value = vix_data.get(latest_vix_date, 'N/A')
-
-tabs = st.tabs(markets)
-
-for i, market_name in enumerate(markets):
-    with tabs[i]:
-        market_kdj = kdj_data.get(market_name, {})
-        weekly_kdj = market_kdj.get('weekly', {})
-        monthly_kdj = market_kdj.get('monthly', {})
-
-        latest_weekly_date = sorted(weekly_kdj.keys())[-1] if weekly_kdj else 'N/A'
-        latest_weekly_j = weekly_kdj.get(latest_weekly_date, {}).get('J', 'N/A')
-        
-        latest_monthly_date = sorted(monthly_kdj.keys())[-1] if monthly_kdj else 'N/A'
-        latest_monthly_j = monthly_kdj.get(latest_monthly_date, {}).get('J', 'N/A')
-
-        metric_cols = st.columns(3)
-        with metric_cols[0]:
-            st.metric(label=f"最新 週 J 值 ({latest_weekly_date})", value=f"{latest_weekly_j:.2f}" if isinstance(latest_weekly_j, float) else "N/A")
-        with metric_cols[1]:
-            st.metric(label=f"最新 月 J 值 ({latest_monthly_date})", value=f"{latest_monthly_j:.2f}" if isinstance(latest_monthly_j, float) else "N/A")
-        with metric_cols[2]:
-            st.metric(label=f"最新 VIX 值 ({latest_vix_date})", value=f"{latest_vix_value:.2f}" if isinstance(latest_vix_value, float) else "N/A")
+# --- 提取各模組數據 ---
+data = model_data_doc.get('data', {})
+j_vix_model_data = data.get('j_vix_model', {})
+tech_model_data = data.get('tech_model', {})
+raw_data = data.get('raw_data', {})
 
 
-# --- 3. 總經環境儀表板 ---
-st.subheader("三、總經環境儀表板")
+# --- 頁面排版 ---
+tab1, tab2 = st.tabs(["短中期擇時訊號 (J值+VIX)", "科技股總經儀表板 (V7.3模型)"])
 
-macro_fred = model_data_doc.get('data', {}).get('macro_fred', {})
-macro_ism = model_data_doc.get('data', {}).get('macro_ism_pmi', {})
-
-with st.expander("展開以查看詳細總經數據"):
-    macro_tabs = st.tabs(["美國總經指標 (FRED)", "美國 ISM PMI 指標"])
+# --- 頁籤一：短中期擇時訊號 ---
+with tab1:
+    st.header("市場進場訊號總覽")
+    signals = j_vix_model_data.get('signals', {})
+    markets = ["標普500指數", "納斯達克100指數", "費城半導體指數", "台股加權指數"]
     
-    with macro_tabs[0]:
-        if not macro_fred:
-            st.write("FRED 總經數據正在收集中...")
-        else:
-            fred_cols = st.columns(2)
-            # 將字典轉換為 DataFrame 以便繪圖
-            for i, (name, data_dict) in enumerate(macro_fred.items()):
-                with fred_cols[i % 2]:
-                    if data_dict:
-                        df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
-                        df.index = pd.to_datetime(df.index)
-                        df.sort_index(inplace=True)
-                        st.markdown(f"**{name}**")
-                        st.line_chart(df)
+    cols = st.columns(len(markets))
+    for i, market_name in enumerate(markets):
+        with cols[i]:
+            with st.container(border=True):
+                st.markdown(f"**{market_name}**")
+                market_signals = signals.get(market_name, {})
+                mid_term_signal = market_signals.get('mid_term_pullback', False)
+                inventory_cycle_signal = market_signals.get('inventory_cycle', False)
 
-    with macro_tabs[1]:
-        if not macro_ism:
-            st.write("ISM PMI 數據正在收集中...")
-        else:
-            df_ism = pd.DataFrame.from_dict(macro_ism, orient='index').sort_index(ascending=False)
+                if mid_term_signal or inventory_cycle_signal:
+                    st.markdown("🟢 <span style='color:green; font-weight:bold;'>觸發進場訊號</span>", unsafe_allow_html=True)
+                    if mid_term_signal: st.write(" - 中期回檔訊號 (週J)")
+                    if inventory_cycle_signal: st.write(" - 庫存週期訊號 (月J)")
+                else:
+                    st.markdown("🔴 <span style='color:red;'>未觸發訊號</span>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.header("核心指標狀態")
+    
+    kdj_data = raw_data.get('kdj', {})
+    latest_vix = j_vix_model_data.get('latest_vix', 'N/A')
+    
+    tabs_kdj = st.tabs(markets)
+    for i, market_name in enumerate(markets):
+        with tabs_kdj[i]:
+            market_kdj = kdj_data.get(market_name, {})
+            weekly_kdj = market_kdj.get('weekly', {})
+            monthly_kdj = market_kdj.get('monthly', {})
+
+            latest_weekly_date = sorted(weekly_kdj.keys())[-1] if weekly_kdj else 'N/A'
+            latest_weekly_j = weekly_kdj.get(latest_weekly_date, {}).get('J', 'N/A')
             
-            # 重新命名
-            df_ism.rename(columns={'就業': '僱傭指數', '庫存': '存貨'}, inplace=True)
+            latest_monthly_date = sorted(monthly_kdj.keys())[-1] if monthly_kdj else 'N/A'
+            latest_monthly_j = monthly_kdj.get(latest_monthly_date, {}).get('J', 'N/A')
+
+            metric_cols = st.columns(3)
+            metric_cols[0].metric(label=f"最新 週 J 值 ({latest_weekly_date})", value=f"{latest_weekly_j:.2f}" if isinstance(latest_weekly_j, (int, float)) else "N/A")
+            metric_cols[1].metric(label=f"最新 月 J 值 ({latest_monthly_date})", value=f"{latest_monthly_j:.2f}" if isinstance(latest_monthly_j, (int, float)) else "N/A")
+            metric_cols[2].metric(label=f"最新 VIX 值", value=f"{latest_vix:.2f}" if isinstance(latest_vix, (int, float)) else "N/A")
+
+# --- 頁籤二：科技股總經儀表板 ---
+with tab2:
+    if not tech_model_data:
+        st.warning("科技股總經模型數據正在收集中...")
+    else:
+        st.header("🎯 當前市場總評")
+        
+        total_score = tech_model_data.get('total_score', 0)
+        scenario = tech_model_data.get('scenario', 'N/A')
+        position = tech_model_data.get('position', 'N/A')
+        
+        score_cols = st.columns(3)
+        score_cols[0].metric("總分", f"{total_score:.1f} / 100.0")
+        score_cols[1].metric("市場情境", scenario)
+        score_cols[2].metric("建議倉位", position)
+        
+        st.markdown("---")
+        st.header("📊 模型評分細項")
+        
+        scores_breakdown = tech_model_data.get('scores_breakdown', {})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            with st.container(border=True):
+                st.markdown("##### 💼 微觀基本面")
+                micro_score = scores_breakdown.get('Mag7營收年增率', 0) + scores_breakdown.get('資本支出增長率', 0) + scores_breakdown.get('關鍵領先指標', 0)
+                st.progress(int(micro_score / 65 * 100), text=f"總分: {micro_score:.1f} / 65.0")
+                st.markdown(f"- Mag7營收年增率: **{scores_breakdown.get('Mag7營收年增率', 0):.1f} / 30.0**")
+                st.markdown(f"- 資本支出增長率: **{scores_breakdown.get('資本支出增長率', 0):.1f} / 20.0**")
+                st.markdown(f"- 關鍵領先指標: **{scores_breakdown.get('關鍵領先指標', 0):.1f} / 15.0**")
+
+        with col2:
+            with st.container(border=True):
+                st.markdown("##### 🌍 總經環境")
+                macro_score = scores_breakdown.get('資金面與流動性', 0) + scores_breakdown.get('GDP季增率', 0) + scores_breakdown.get('ISM製造業PMI', 0) + scores_breakdown.get('美國消費需求綜合', 0)
+                st.progress(int(macro_score / 35 * 100), text=f"總分: {macro_score:.1f} / 35.0")
+                st.markdown(f"- 資金面與流動性: **{scores_breakdown.get('資金面與流動性', 0):.1f} / 12.0**")
+                st.markdown(f"- GDP季增率: **{scores_breakdown.get('GDP季增率', 0):.1f} / 9.0**")
+                st.markdown(f"- ISM製造業PMI: **{scores_breakdown.get('ISM製造業PMI', 0):.1f} / 8.0**")
+                st.markdown(f"- 美國消費需求綜合: **{scores_breakdown.get('美國消費需求綜合', 0):.1f} / 6.0**")
+
+        with st.expander("🔍 展開以查看所有指標原始數據"):
+            underlying_data = tech_model_data.get('underlying_data', {})
             
-            # 定義新的欄位順序
-            new_order = [
-                "非製造業 PMI", "製造業 PMI", "新訂單", "生產", 
-                "僱傭指數", "存貨", "客戶端存貨"
-            ]
-            # 過濾掉可能不存在的欄位，以避免錯誤
-            display_order = [col for col in new_order if col in df_ism.columns]
+            st.write("#### 核心計算值")
+            u1, u2, u3, u4 = st.columns(4)
+            u1.metric("Mag7 營收年增率", f"{underlying_data.get('mag7_agg_revenue_growth', 0):.2%}")
+            u2.metric("Mag7 資本支出年增率", f"{underlying_data.get('mag7_agg_capex_growth', 0):.2%}")
+            u3.metric("TSM 營收年增率", f"{underlying_data.get('tsm_growth', 0):.2%}")
+            u4.metric("ISM 新訂單-存貨差值", f"{underlying_data.get('ism_diff', 0):.2f}")
             
-            st.dataframe(df_ism[display_order].head(12)) # 顯示最近12個月
+            st.markdown("---")
+            
+            exp_tabs = st.tabs(["FRED 數據", "ISM & DBnomics 數據"])
+            with exp_tabs[0]:
+                st.write("#### FRED 總經指標 (最新值)")
+                fred_raw = raw_data.get('fred', {})
+                fred_disp = {k: v[sorted(v.keys())[-1]] for k, v in fred_raw.items() if v}
+                st.json(fred_disp)
+
+            with exp_tabs[1]:
+                st.write("#### ISM & OECD 指標 (最新值)")
+                dbnomics_raw = raw_data.get('dbnomics', {})
+                dbnomics_disp = {k: v[sorted(v.keys())[-1]] for k, v in dbnomics_raw.items() if v}
+                st.json(dbnomics_disp)
