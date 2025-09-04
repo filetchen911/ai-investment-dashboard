@@ -1,4 +1,4 @@
-# file: pages/70_cyclical_investing_model.py (v5.4.0 - 視覺化優化版)
+# file: pages/70_cyclical_investing_model.py (v5.4.0)
 
 import streamlit as st
 import pandas as pd
@@ -16,9 +16,8 @@ if 'user_id' not in st.session_state:
     st.info("請先從主頁面登入，以使用此功能。")
     st.stop()
 
-# --- 讀取並解析數據 ---
+# --- 讀取數據 ---
 model_data_doc = load_latest_model_data()
-
 if not model_data_doc:
     st.info("模型數據正在生成中，或後端服務尚未執行成功。請稍後再試。")
     st.stop()
@@ -40,7 +39,7 @@ raw_data = data.get('raw_data', {})
 # --- 頁面排版 ---
 tab1, tab2 = st.tabs(["短中期擇時訊號 (J值+VIX)", "科技股總經儀表板 (V7.3模型)"])
 
-# --- 頁籤一：短中期擇時訊號 ---
+# --- 頁籤一：短中期擇時訊號 (維持不變) ---
 with tab1:
     st.header("市場進場訊號總覽")
     signals = j_vix_model_data.get('signals', {})
@@ -127,99 +126,109 @@ with tab2:
                 st.markdown(f"- ISM製造業PMI: **{scores_breakdown.get('ISM製造業PMI', 0):.1f} / 8.0**")
                 st.markdown(f"- 美國消費需求綜合: **{scores_breakdown.get('美國消費需求綜合', 0):.1f} / 6.0**")
 
-        with st.expander("🔍 展開以查看所有指標原始數據"):
-            underlying_data = tech_model_data.get('underlying_data', {})
-            raw_fred_data = raw_data.get('fred', {})
-            raw_dbnomics_data = raw_data.get('dbnomics', {})
+        with st.expander("🔍 展開以查看所有指標原始數據", expanded=True):
             
-            st.write("#### 核心計算值")
-            u1, u2, u3, u4 = st.columns(4)
-            u1.metric("Mag7 營收年增率", f"{underlying_data.get('mag7_agg_revenue_growth', 0):.2%}")
-            u2.metric("Mag7 資本支出年增率", f"{underlying_data.get('mag7_agg_capex_growth', 0):.2%}")
-            u3.metric("TSM 營收年增率", f"{underlying_data.get('tsm_growth', 0):.2%}")
-            u4.metric("ISM 新訂單-存貨差值", f"{underlying_data.get('ism_diff', 0):.2f}")
-            
-            st.markdown("---")
-            
-            exp_tabs = st.tabs(["FRED 數據", "ISM & OECD 數據"])
-            
-            # --- [v5.4.0 視覺化優化] FRED 指標 ---
+            # --- [v5.4.0] 新增的三頁籤佈局 ---
+            exp_tabs = st.tabs(["產業數據", "總經數據", "領先指標"])
+
+            # 頁籤一：產業數據
             with exp_tabs[0]:
-                if not raw_fred_data:
-                    st.write("FRED 總經數據正在收集中...")
+                st.markdown("#### **科技巨頭關鍵財務數據 (季)**")
+                corporate_data = raw_data.get('corporate_financials', {})
+                if not corporate_data:
+                    st.write("產業數據正在收集中...")
                 else:
-                    fred_cols = st.columns(2)
-                    fred_data_processed = {}
-                    for name, data_dict in raw_fred_data.items():
-                        if data_dict:
-                            df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
-                            df.index = pd.to_datetime(df.index)
-                            df.sort_index(inplace=True)
-                            fred_data_processed[name] = df
-                    
-                    for i, (name, df) in enumerate(fred_data_processed.items()):
-                        with fred_cols[i % 2]:
-                            with st.container(border=True):
-                                st.markdown(f"**{name}**")
-                                latest_value = df['Value'].iloc[-1] if not df.empty else "N/A"
-                                previous_value = df['Value'].iloc[-2] if len(df) >= 2 else None
-                                delta = (latest_value - previous_value) if previous_value is not None else None
-                                
-                                st.metric(
-                                    label=f"最新 ({df.index[-1].strftime('%Y-%m')})", 
-                                    value=f"{latest_value:,.2f}",
-                                    delta=f"{delta:,.2f}" if delta is not None else None
-                                )
-                                st.line_chart(df, height=150)
-            
-            # --- [v5.4.0 視覺化優化] ISM & OECD 指標 ---
+                    corp_cols = st.columns(4)
+                    companies = ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'TSM']
+                    for i, symbol in enumerate(companies):
+                        with corp_cols[i % 4]:
+                            if symbol in corporate_data:
+                                with st.container(border=True):
+                                    st.markdown(f"**{symbol}**")
+                                    # 營收
+                                    revenue_data = corporate_data[symbol].get('revenue', {})
+                                    if revenue_data:
+                                        rev_df = pd.DataFrame.from_dict(revenue_data, orient='index', columns=['Revenue']).sort_index()
+                                        rev_yoy = (rev_df['Revenue'].iloc[-1] / rev_df['Revenue'].iloc[0] - 1) if len(rev_df) >= 4 else 0
+                                        st.metric("最新季營收年增率", f"{rev_yoy:.2%}")
+                                        st.bar_chart(rev_df, height=150)
+                                    # 資本支出
+                                    capex_data = corporate_data[symbol].get('capex', {})
+                                    if capex_data:
+                                        capex_df = pd.DataFrame.from_dict(capex_data, orient='index', columns=['Capex']).sort_index()
+                                        capex_df['Capex'] = capex_df['Capex'].abs()
+                                        st.bar_chart(capex_df, height=150)
+
+
+            # 頁籤二：總經數據
             with exp_tabs[1]:
-                if not raw_dbnomics_data:
-                    st.write("ISM & OECD 數據正在收集中...")
-                else:
-                    # 將所有 DBnomics 指標轉換為 DataFrame
-                    dbnomics_dfs = {}
-                    for name, data_dict in raw_dbnomics_data.items():
-                        if data_dict:
-                            df = pd.DataFrame.from_dict(data_dict, orient='index', columns=['Value'])
-                            df.index = pd.to_datetime(df.index)
-                            df.sort_index(inplace=True)
-                            dbnomics_dfs[name] = df
-                    
-                    # 建立兩欄佈局
-                    db_cols = st.columns(2)
-                    
-                    # 依序顯示每個指標的卡片
-                    for i, (name, df) in enumerate(dbnomics_dfs.items()):
-                        with db_cols[i % 2]:
-                            with st.container(border=True):
+                st.markdown("#### **美國總經指標 (FRED & ISM)**")
+                fred_data = raw_data.get('fred', {})
+                ism_data = raw_data.get('dbnomics', {})
+                
+                # 合併 FRED 和部分 ISM 數據
+                macro_data_sources = {**fred_data, **ism_data}
+                indicators_to_display = ["美國零售銷售年增率 (%)", "核心 PCE 物價指數年增率 (%)", "非農就業人數變化 (萬人)", "失業率 (%)", "密大消費者信心指數", "製造業 PMI", "非製造業 PMI"]
+                
+                macro_cols = st.columns(2)
+                col_idx = 0
+                for name in indicators_to_display:
+                    if name in macro_data_sources and macro_data_sources[name]:
+                        with macro_cols[col_idx % 2]:
+                             with st.container(border=True):
+                                df = pd.DataFrame.from_dict(macro_data_sources[name], orient='index', columns=['Value'])
+                                df.index = pd.to_datetime(df.index)
+                                df.sort_index(inplace=True)
+                                
                                 st.markdown(f"**{name}**")
-                                latest_value = df['Value'].iloc[-1] if not df.empty else "N/A"
+                                latest_value = df['Value'].iloc[-1]
                                 previous_value = df['Value'].iloc[-2] if len(df) >= 2 else None
                                 delta = (latest_value - previous_value) if previous_value is not None else None
+                                
                                 st.metric(
                                     label=f"最新 ({df.index[-1].strftime('%Y-%m')})", 
                                     value=f"{latest_value:,.2f}",
-                                    delta=f"{delta:,.2f}" if delta is not None else None
-                                )
+                                    delta=f"{delta:,.2f}" if delta is not None else None)
                                 st.line_chart(df, height=150)
-                    
-                    # 額外計算並顯示 OECD 年增率
-                    if "OECD 美國領先指標" in dbnomics_dfs:
-                        with db_cols[(i + 1) % 2]: # 放在下一個欄位
-                            with st.container(border=True):
-                                oecd_df = dbnomics_dfs["OECD 美國領先指標"]
-                                oecd_yoy = oecd_df.pct_change(12) * 100
-                                oecd_yoy.dropna(inplace=True)
-                                
-                                st.markdown("**OECD 美國領先指標 (年增率 %)**")
-                                latest_yoy = oecd_yoy['Value'].iloc[-1] if not oecd_yoy.empty else "N/A"
-                                previous_yoy = oecd_yoy['Value'].iloc[-2] if len(oecd_yoy) >= 2 else None
-                                delta_yoy = (latest_yoy - previous_yoy) if previous_yoy is not None else None
-                                
-                                st.metric(
-                                    label=f"最新年增率 ({oecd_yoy.index[-1].strftime('%Y-%m')})",
-                                    value=f"{latest_yoy:,.2f}%",
-                                    delta=f"{delta_yoy:,.2f}" if delta_yoy is not None else None
-                                )
-                                st.line_chart(oecd_yoy, height=150)
+                        col_idx += 1
+
+
+            # 頁籤三：領先指標
+            with exp_tabs[2]:
+                st.markdown("#### **領先指標 (OECD)**")
+                oecd_data = raw_data.get('dbnomics', {}).get('OECD 美國領先指標', {})
+                
+                if not oecd_data:
+                    st.write("OECD 領先指標數據正在收集中...")
+                else:
+                    lead_cols = st.columns(2)
+                    with lead_cols[0]:
+                        with st.container(border=True):
+                            df = pd.DataFrame.from_dict(oecd_data, orient='index', columns=['Value'])
+                            df.index = pd.to_datetime(df.index)
+                            df.sort_index(inplace=True)
+                            
+                            st.markdown("**OECD 美國領先指標 (絕對值)**")
+                            latest_value = df['Value'].iloc[-1]
+                            previous_value = df['Value'].iloc[-2] if len(df) >= 2 else None
+                            delta = latest_value - previous_value if previous_value is not None else None
+                            st.metric(
+                                label=f"最新 ({df.index[-1].strftime('%Y-%m')})", 
+                                value=f"{latest_value:,.2f}",
+                                delta=f"{delta:,.2f}" if delta is not None else None)
+                            st.line_chart(df, height=150)
+                            
+                    with lead_cols[1]:
+                        with st.container(border=True):
+                            df_yoy = df.pct_change(12) * 100
+                            df_yoy.dropna(inplace=True)
+                            
+                            st.markdown("**OECD 美國領先指標 (年增率 %)**")
+                            latest_yoy = df_yoy['Value'].iloc[-1]
+                            previous_yoy = df_yoy['Value'].iloc[-2] if len(df_yoy) >= 2 else None
+                            delta_yoy = latest_yoy - previous_yoy if previous_yoy is not None else None
+                            st.metric(
+                                label=f"最新 ({df_yoy.index[-1].strftime('%Y-%m')})", 
+                                value=f"{latest_yoy:,.2f}%",
+                                delta=f"{delta_yoy:,.2f}" if delta_yoy is not None else None)
+                            st.line_chart(df_yoy, height=150)
