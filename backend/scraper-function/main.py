@@ -319,13 +319,28 @@ def run_scraper(request):
     signals_tech_model = run_tech_model(financial_data, fred_data, dbnomics_data)
 
     # 4. 組合最終數據包
+
+    corporate_financials = {}
+    if financial_data:
+        for symbol, data in financial_data.items():
+            try:
+                revenue = data['quarterly_financials'].loc['Total Revenue'].head(4) # 取最近4季
+                capex = data['quarterly_cashflow'].loc['Capital Expenditure'].head(4)
+                corporate_financials[symbol] = {
+                    "revenue": {d.strftime('%Y-%m'): v for d, v in revenue.to_dict().items()},
+                    "capex": {d.strftime('%Y-%m'): v for d, v in capex.to_dict().items()}
+                }
+            except KeyError:
+                print(f"  - 注意：{symbol} 的財報數據不完整，跳過。")
+                    
     final_data_to_store = {
         "j_vix_model": {"signals": signals_j_vix, "latest_vix": yfinance_data['Close']['^VIX'].dropna().iloc[-1] if '^VIX' in yfinance_data['Close'].columns else None},
         "tech_model": signals_tech_model,
         "raw_data": {
             "kdj": {m: {"weekly": {d.strftime('%Y-%m-%d'): v for d, v in k['weekly'].tail(3).to_dict('index').items()}, "monthly": {d.strftime('%Y-%m-%d'): v for d, v in k['monthly'].tail(3).to_dict('index').items()}} for m, k in kdj_indicators.items() if k.get('weekly') is not None and k.get('monthly') is not None},
-            "fred": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.tail(13).to_dict().items()} for k, v in fred_data.items() if v is not None},
-            "dbnomics": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.to_dict().items()} for k, v in dbnomics_data.items() if v is not None}
+            "fred": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.to_dict().items()} for k, v in fred_data.items() if v is not None},
+            "dbnomics": {k: {d.strftime('%Y-%m-%d'): val for d, val in v.to_dict().items()} for k, v in dbnomics_data.items() if v is not None},
+            "corporate_financials": corporate_financials # <-- [v5.4.0-rc4 新增]
         }
     }
     
