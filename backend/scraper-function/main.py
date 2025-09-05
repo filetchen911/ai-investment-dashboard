@@ -324,8 +324,8 @@ def run_scraper(request):
     if financial_data:
         for symbol, data in financial_data.items():
             try:
-                revenue = data['quarterly_financials'].loc['Total Revenue'].head(4) # 取最近4季
-                capex = data['quarterly_cashflow'].loc['Capital Expenditure'].head(4)
+                revenue = data['quarterly_financials'].loc['Total Revenue'].head(5) # 取最近5季
+                capex = data['quarterly_cashflow'].loc['Capital Expenditure'].head(5)
                 corporate_financials[symbol] = {
                     "revenue": {d.strftime('%Y-%m'): v for d, v in revenue.to_dict().items()},
                     "capex": {d.strftime('%Y-%m'): v for d, v in capex.to_dict().items()}
