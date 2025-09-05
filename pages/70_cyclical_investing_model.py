@@ -5,6 +5,7 @@ import pandas as pd
 import datetime
 import pytz
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from utils import render_sidebar, load_latest_model_data
 
 st.set_page_config(layout="wide")
@@ -120,7 +121,7 @@ with tab2:
         with col2:
             with st.container(border=True):
                 st.markdown("##### 🌍 總經環境")
-                macro_score = scores_breakdown.get('資金面與流動性', 0) + scores_breakdown.get('GDP季增率', 0) + scores_breakdown.get('ISM製造業PMI', 0) + scores_breakdown.get('美國消費需求綜合', 0)
+                macro_score = scores_breakdown.get('資金面與流動性', 0) + scores_breakdown.get('GDP季增年率', 0) + scores_breakdown.get('ISM製造業PMI', 0) + scores_breakdown.get('美國消費需求綜合', 0)
                 st.progress(int(macro_score / 35 * 100), text=f"總分: {macro_score:.1f} / 35.0")
                 st.markdown(f"- 資金面與流動性: **{scores_breakdown.get('資金面與流動性', 0):.1f} / 12.0**")
                 st.markdown(f"- GDP季增率: **{scores_breakdown.get('GDP季增率', 0):.1f} / 9.0**")
@@ -155,18 +156,28 @@ with tab2:
                                         latest_rev_yoy = rev_df['YoY'].iloc[-1] if len(rev_df) >= 5 else 'N/A'
                                         
                                         st.metric("最新季營收年增率", f"{latest_rev_yoy:.2f}%" if isinstance(latest_rev_yoy, (int, float)) else "N/A")
-
-                                        # [修正] 建立單純的長條圖，並優化 Y 軸格式
+                                        
+                                        # [v5.4.0 修正] 圖表優化
                                         rev_df_display = rev_df.copy()
                                         rev_df_display['Revenue_B'] = rev_df_display['Revenue'] / 1_000_000_000
+                                        # 將日期轉換為 YYYY-QQ 格式
+                                        rev_df_display['Quarter'] = rev_df_display.index.to_period('Q').strftime('%Y-Q%q')
+                                        
                                         fig = go.Figure()
-                                        fig.add_trace(go.Bar(x=rev_df_display.index, y=rev_df_display['Revenue_B'], name='營收'))
+                                        fig.add_trace(go.Bar(
+                                            x=rev_df_display['Quarter'], 
+                                            y=rev_df_display['Revenue_B'], 
+                                            name='營收',
+                                            hovertemplate='%{y:,.2f} B<extra></extra>' # 修正3: 簡化懸浮提示
+                                        ))
                                         fig.update_layout(
-                                            title_text='營收 (Billion)',
-                                            height=200, margin=dict(l=0, r=0, t=30, b=0), 
-                                            yaxis_title="十億 (B)",
+                                            title_text='營收 (十億)',
+                                            height=200, margin=dict(l=0, r=0, t=30, b=0),
+                                            xaxis_title=None, yaxis_title="十億 (B)",
                                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                                         )
+                                        # 修正1&2: 確保所有日期標籤都顯示
+                                        fig.update_xaxes(type='category')
                                         st.plotly_chart(fig, use_container_width=True)
                                     
                                     # --- 資本支出 ---
@@ -174,6 +185,7 @@ with tab2:
                                     if capex_data:
                                         capex_df = pd.DataFrame.from_dict(capex_data, orient='index', columns=['Capex']).sort_index()
                                         capex_df.index = pd.to_datetime(capex_df.index)
+                                        capex_df['Capex'] = capex_df['Capex'].abs()
                                         capex_df['YoY'] = capex_df['Capex'].pct_change(4) * 100
                                         latest_capex_yoy = capex_df['YoY'].iloc[-1] if len(capex_df) >= 5 else 'N/A'
                                         
