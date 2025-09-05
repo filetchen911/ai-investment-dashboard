@@ -171,36 +171,44 @@ def run_j_vix_model(kdj_data, vix_data):
     return signals
 
 def run_tech_model(financials, fred_data, dbnomics_data):
+    """
+    [v5.4.0-rc7] 執行美股科技股總經模型，並回傳包含詳細評級的完整結果。
+    """
     print("\n> [模型二] 正在執行美股科技股總經模型 (V7.3)...")
     data = {}
     scores = {"Mag7營收年增率": 0, "資本支出增長率": 0, "關鍵領先指標": 0, "資金面與流動性": 0, "GDP季增率": 0, "ISM製造業PMI": 0, "美國消費需求綜合": 0}
     
     try:
-        # 微觀-Mag7營收
+        # --- 微觀基本面 ---
+        # 1. Mag7營收
         total_curr_rev, total_prev_rev = 0, 0
         for s in ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META']:
             if s in financials and "Total Revenue" in financials[s]['quarterly_financials'].index:
                 rev = financials[s]['quarterly_financials'].loc["Total Revenue"]
                 if len(rev) >= 5: total_curr_rev += rev.iloc[0]; total_prev_rev += rev.iloc[4]
         data['mag7_agg_revenue_growth'] = (total_curr_rev - total_prev_rev) / total_prev_rev if total_prev_rev > 0 else 0
-        if data['mag7_agg_revenue_growth'] >= 0.15: scores['Mag7營收年增率'] = 30
-        elif data['mag7_agg_revenue_growth'] >= 0.10: scores['Mag7營收年增率'] = 25
-        elif data['mag7_agg_revenue_growth'] >= 0.05: scores['Mag7營收年增率'] = 15
+        
+        rev_rating = "成長停滯/衰退"
+        if data['mag7_agg_revenue_growth'] >= 0.15: scores['Mag7營收年增率'] = 30; rev_rating = "強勁成長"
+        elif data['mag7_agg_revenue_growth'] >= 0.10: scores['Mag7營收年增率'] = 25; rev_rating = "穩健成長"
+        elif data['mag7_agg_revenue_growth'] >= 0.05: scores['Mag7營收年增率'] = 15; rev_rating = "成長趨緩"
         elif data['mag7_agg_revenue_growth'] >= 0: scores['Mag7營收年增率'] = 8
 
-        # 微觀-資本支出
+        # 2. 資本支出
         total_curr_capex, total_prev_capex = 0, 0
         for s in ['MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META']:
              if s in financials and "Capital Expenditure" in financials[s]['quarterly_cashflow'].index:
                 capex = financials[s]['quarterly_cashflow'].loc["Capital Expenditure"]
                 if len(capex) >= 5: total_curr_capex += abs(capex.iloc[0]); total_prev_capex += abs(capex.iloc[4])
         data['mag7_agg_capex_growth'] = (total_curr_capex - total_prev_capex) / total_prev_capex if total_prev_capex > 0 else 0
-        if data['mag7_agg_capex_growth'] >= 0.25: scores['資本支出增長率'] = 20
-        elif data['mag7_agg_capex_growth'] >= 0.15: scores['資本支出增長率'] = 16
-        elif data['mag7_agg_capex_growth'] >= 0.05: scores['資本支出增長率'] = 10
+
+        capex_rating = "投資保守/削減"
+        if data['mag7_agg_capex_growth'] >= 0.25: scores['資本支出增長率'] = 20; capex_rating = "積極擴張"
+        elif data['mag7_agg_capex_growth'] >= 0.15: scores['資本支出增長率'] = 16; capex_rating = "穩健投資"
+        elif data['mag7_agg_capex_growth'] >= 0.05: scores['資本支出增長率'] = 10; capex_rating = "謹慎投資"
         elif data['mag7_agg_capex_growth'] >= 0: scores['資本支出增長率'] = 5
 
-        # 微觀-關鍵領先指標
+        # 3. 關鍵領先指標
         tsm_score = 0
         if 'TSM' in financials and "Total Revenue" in financials['TSM']['quarterly_financials'].index:
             rev = financials['TSM']['quarterly_financials'].loc["Total Revenue"]
@@ -208,9 +216,10 @@ def run_tech_model(financials, fred_data, dbnomics_data):
             if data['tsm_growth'] >= 0.20: tsm_score = 6
             elif data['tsm_growth'] >= 0.10: tsm_score = 4
             elif data['tsm_growth'] >= 0: tsm_score = 2
+        
         oecd_cli = dbnomics_data.get("OECD 美國領先指標")
         oecd_score = 0
-        if oecd_cli is not None:
+        if oecd_cli is not None and len(oecd_cli) > 0:
             data['oecd_cli_latest'] = oecd_cli.iloc[-1]
             if data['oecd_cli_latest'] >= 101: oecd_score += 4
             elif data['oecd_cli_latest'] >= 100.5: oecd_score += 3
@@ -218,7 +227,10 @@ def run_tech_model(financials, fred_data, dbnomics_data):
             elif data['oecd_cli_latest'] >= 99.5: oecd_score += 1
             if len(oecd_cli) >= 3 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2] and oecd_cli.iloc[-2] > oecd_cli.iloc[-3]: oecd_score += 2
             elif len(oecd_cli) >= 2 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2]: oecd_score += 1
-        ism_diff = dbnomics_data.get("新訂單", pd.Series([0])).iloc[-1] - dbnomics_data.get("客戶端存貨", pd.Series([0])).iloc[-1]
+
+        ism_new_orders = dbnomics_data.get("新訂單", pd.Series([0]))
+        ism_inventories = dbnomics_data.get("客戶端存貨", pd.Series([0]))
+        ism_diff = ism_new_orders.iloc[-1] - ism_inventories.iloc[-1] if len(ism_new_orders) > 0 and len(ism_inventories) > 0 else 0
         data['ism_diff'] = ism_diff
         ism_diff_score = 0
         if ism_diff >= 10: ism_diff_score = 3
@@ -227,14 +239,16 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         elif ism_diff >= -5: ism_diff_score = 1
         scores['關鍵領先指標'] = tsm_score + oecd_score + ism_diff_score
 
-        # 總經-資金面
-        rate = fred_data.get('聯邦基金利率').iloc[-1]
+        # --- 總經環境 ---
+        # 4. 資金面
+        rate = fred_data.get('聯邦基金利率').iloc[-1] if fred_data.get('聯邦基金利率') is not None and not fred_data.get('聯邦基金利率').empty else 0
         data['current_fed_rate'] = rate
         rate_level_score = 0
         if rate < 3: rate_level_score = 6
         elif rate < 4: rate_level_score = 5
         elif rate < 5: rate_level_score = 3
         elif rate < 6: rate_level_score = 2
+        
         dot_plot = fred_data.get('FOMC利率點陣圖中位數')
         fomc_score = 0
         if dot_plot is not None and len(dot_plot) >= 3:
@@ -246,26 +260,27 @@ def run_tech_model(financials, fred_data, dbnomics_data):
             elif 0 <= change_bp <= 25: fomc_score = 2
         scores['資金面與流動性'] = rate_level_score + fomc_score
 
-        # 總經-GDP
-        gdp = fred_data.get('實質GDP季增年率(SAAR)').iloc[-1]
+        # 5. GDP
+        gdp = fred_data.get('實質GDP季增年率(SAAR)').iloc[-1] if fred_data.get('實質GDP季增年率(SAAR)') is not None and not fred_data.get('實質GDP季增年率(SAAR)').empty else 0
         data['gdp_growth'] = gdp
-        if gdp >= 3: scores['GDP季增率'] = 9
-        elif gdp >= 2: scores['GDP季增率'] = 7
-        elif gdp >= 1: scores['GDP季增率'] = 4
+        gdp_rating = "接近停滯/衰退"
+        if gdp >= 3: scores['GDP季增率'] = 9; gdp_rating = "強勁擴張"
+        elif gdp >= 2: scores['GDP季增率'] = 7; gdp_rating = "溫和成長"
+        elif gdp >= 1: scores['GDP季增率'] = 4; gdp_rating = "成長放緩"
         elif gdp >= 0: scores['GDP季增率'] = 2
 
-        # 總經-PMI
-        pmi = dbnomics_data.get("ISM 製造業PMI").iloc[-1]
+        # 6. PMI
+        pmi = dbnomics_data.get("ISM 製造業PMI").iloc[-1] if dbnomics_data.get("ISM 製造業PMI") is not None and not dbnomics_data.get("ISM 製造業PMI").empty else 0
         data['ism_pmi'] = pmi
-        if pmi >= 55: scores['ISM製造業PMI'] = 8
-        elif pmi >= 52: scores['ISM製造業PMI'] = 6
-        elif pmi >= 50: scores['ISM製造業PMI'] = 4
+        pmi_rating = "收縮區間"
+        if pmi >= 55: scores['ISM製造業PMI'] = 8; pmi_rating = "強勁擴張"
+        elif pmi >= 52: scores['ISM製造業PMI'] = 6; pmi_rating = "溫和擴張"
+        elif pmi >= 50: scores['ISM製造業PMI'] = 4; pmi_rating = "輕微擴張"
         elif pmi >= 47: scores['ISM製造業PMI'] = 2
         
-        # 總經-消費
-        # [修正] 直接使用已計算好的年增率數據
-        retail_yoy = fred_data.get('美國零售銷售年增率 (%)').iloc[-1] / 100 # 轉為小數
-        pce_yoy = fred_data.get('實質個人消費支出年增率 (%)').iloc[-1] / 100
+        # 7. 消費
+        retail_yoy = fred_data.get('美國零售銷售年增率 (%)').iloc[-1] / 100 if fred_data.get('美國零售銷售年增率 (%)') is not None and not fred_data.get('美國零售銷售年增率 (%)').empty else 0
+        pce_yoy = fred_data.get('實質個人消費支出年增率 (%)').iloc[-1] / 100 if fred_data.get('實質個人消費支出年增率 (%)') is not None and not fred_data.get('實質個人消費支出年增率 (%)').empty else 0
         data['retail_yoy'] = retail_yoy
         data['pce_yoy'] = pce_yoy
         retail_score, pce_score = 0, 0
@@ -276,20 +291,47 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         elif pce_yoy > 0.02: pce_score = 1.8
         elif pce_yoy >= 0: pce_score = 0.8
         scores['美國消費需求綜合'] = retail_score + pce_score
-
+        
     except Exception as e:
         print(f"  - ❌ [模型二] 計算時發生錯誤: {e}")
 
+    # --- 最終結果打包 ---
     total_score = sum(scores.values())
-    if total_score >= 80: scenario = "情境1: 主升段"; position = "70-80%";
-    elif total_score >= 65: scenario = "情境2: 末升段"; position = "50-70%";
-    elif total_score >= 45: scenario = "情境3: 初跌段"; position = "40-60%";
-    elif total_score >= 25: scenario = "情境4: 主跌段"; position = "60-75%";
-    else: scenario = "情境5: 觸底/初升段"; position = "75-80%";
     
-    print("  ✅ [模型二] 執行完畢。")
-    return {"total_score": total_score, "scenario": scenario, "position": position, "scores_breakdown": scores, "underlying_data": data}
+    if total_score >= 80:
+        scenario = "情境1: 主升段"; position = "70-80%"; action = "維持倉位，不追高";
+        scenario_details = "特徵: 高增長、寬鬆流動性、強勁總經。各項指標均在高位，市場情緒樂觀，基本面與資金面共振向上。此為主升段，風險較低但追高需謹慎。"
+    elif total_score >= 65:
+        scenario = "情境2: 末升段"; position = "50-70%"; action = "開始減倉，準備現金";
+        scenario_details = "特徵: 中等增長、中性流動性、穩健總經。增長指標可能開始觸頂，或資金面出現緊縮預期。市場仍處於高位，但風險正在累積。此為末升段，應開始考慮獲利了結。"
+    elif total_score >= 45:
+        scenario = "情境3: 初跌段"; position = "40-60%"; action = "謹慎加倉，初步試探";
+        scenario_details = "特徵: 增長放緩、流動性預期轉向寬鬆、總經數據轉弱。市場可能經歷初回調，恐慌情緒尚未蔓延。此為初跌段，是左側交易者開始分批試探的時機。"
+    elif total_score >= 25:
+        scenario = "情境4: 主跌段"; position = "60-75%"; action = "積極加倉，把握恐慌機會";
+        scenario_details = "特徵: 增長衰退、緊縮流動性、總經惡化。市場處於悲觀情緒中，可能出現恐慌性拋售。此為主跌段，危機中蘊藏著最佳的建倉機會。"
+    else: # total_score < 25
+        scenario = "情境5: 觸底/初升段"; position = "75-80%"; action = "完成建倉，準備下個週期";
+        scenario_details = "特徵: 數據觸底回升、流動性轉向寬鬆、總經開始企穩。市場信心依然脆弱，但最壞的時期可能已經過去。此為觸底反轉的初升段，是完成建倉的最後階段。"
 
+    print("  ✅ [模型二] 執行完畢。")
+    
+    return {
+        "total_score": total_score,
+        "scenario": scenario,
+        "position": position,
+        "action": action,
+        "scenario_details": scenario_details,
+        "scores_breakdown": {
+            "Mag7營收年增率": {"score": scores['Mag7營收年增率'], "value": f"{data.get('mag7_agg_revenue_growth', 0):.2%}", "rating": rev_rating},
+            "資本支出增長率": {"score": scores['資本支出增長率'], "value": f"{data.get('mag7_agg_capex_growth', 0):.2%}", "rating": capex_rating},
+            "關鍵領先指標": {"score": scores['關鍵領先指標'], "value": f"TSM:{tsm_score:.1f}, OECD:{oecd_score:.1f}, ISM:{ism_diff_score:.1f}", "rating": ""},
+            "資金面與流動性": {"score": scores['資金面與流動性'], "value": f"利率:{rate_level_score:.1f}, FOMC:{fomc_score:.1f}", "rating": ""},
+            "GDP季增率": {"score": scores['GDP季增率'], "value": f"{data.get('gdp_growth', 0):.1f}%", "rating": gdp_rating},
+            "ISM製造業PMI": {"score": scores['ISM製造業PMI'], "value": f"{data.get('ism_pmi', 0):.1f}", "rating": pmi_rating},
+            "美國消費需求綜合": {"score": scores['美國消費需求綜合'], "value": f"零售:{retail_score:.1f}, PCE:{pce_score:.1f}", "rating": ""}
+        }
+    }
 
 @functions_framework.http
 def run_scraper(request):

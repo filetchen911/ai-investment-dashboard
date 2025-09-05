@@ -1,4 +1,4 @@
-# file: pages/70_cyclical_investing_model.py (v5.4.0)
+# file: pages/70_cyclical_investing_model.py (v5.4.0 - 深度優化版)
 
 import streamlit as st
 import pandas as pd
@@ -97,11 +97,18 @@ with tab2:
         total_score = tech_model_data.get('total_score', 0)
         scenario = tech_model_data.get('scenario', 'N/A')
         position = tech_model_data.get('position', 'N/A')
-
+        action = tech_model_data.get('action', '') # <-- 提取操作方向
+        scenario_details = tech_model_data.get('scenario_details', '') # <-- 提取情境描述
+        
         score_cols = st.columns(3)
         score_cols[0].metric("總分", f"{total_score:.1f} / 100.0")
         score_cols[1].metric("市場情境", scenario)
-        score_cols[2].metric("建議倉位", position)
+        # 將操作方向顯示在建議倉位的 delta 區域
+        score_cols[2].metric("建議倉位", position, delta=action, delta_color="off") 
+        
+        # 顯示詳細的情境描述
+        if scenario_details:
+            st.info(scenario_details)
 
         st.markdown("---")
         st.header("📊 模型評分細項")
@@ -112,21 +119,26 @@ with tab2:
         with col1:
             with st.container(border=True):
                 st.markdown("##### 💼 微觀基本面")
-                micro_score = scores_breakdown.get('Mag7營收年增率', 0) + scores_breakdown.get('資本支出增長率', 0) + scores_breakdown.get('關鍵領先指標', 0)
+                micro_score = scores_breakdown.get('Mag7營收年增率', {}).get('score',0) + scores_breakdown.get('資本支出增長率', {}).get('score',0) + scores_breakdown.get('關鍵領先指標', {}).get('score',0)
                 st.progress(int(micro_score / 65 * 100), text=f"總分: {micro_score:.1f} / 65.0")
-                st.markdown(f"- Mag7營收年增率: **{scores_breakdown.get('Mag7營收年增率', 0):.1f} / 30.0**")
-                st.markdown(f"- 資本支出增長率: **{scores_breakdown.get('資本支出增長率', 0):.1f} / 20.0**")
-                st.markdown(f"- 關鍵領先指標: **{scores_breakdown.get('關鍵領先指標', 0):.1f} / 15.0**")
+
+                for key, details in scores_breakdown.items():
+                    if key in ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"]:
+                        st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
+                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
         with col2:
             with st.container(border=True):
                 st.markdown("##### 🌍 總經環境")
-                macro_score = scores_breakdown.get('資金面與流動性', 0) + scores_breakdown.get('GDP季增年率', 0) + scores_breakdown.get('ISM製造業PMI', 0) + scores_breakdown.get('美國消費需求綜合', 0)
+                macro_score = scores_breakdown.get('資金面與流動性', {}).get('score',0) + scores_breakdown.get('GDP季增率', {}).get('score',0) + scores_breakdown.get('ISM製造業PMI', {}).get('score',0) + scores_breakdown.get('美國消費需求綜合', {}).get('score',0)
                 st.progress(int(macro_score / 35 * 100), text=f"總分: {macro_score:.1f} / 35.0")
-                st.markdown(f"- 資金面與流動性: **{scores_breakdown.get('資金面與流動性', 0):.1f} / 12.0**")
-                st.markdown(f"- GDP季增率: **{scores_breakdown.get('GDP季增率', 0):.1f} / 9.0**")
-                st.markdown(f"- ISM製造業PMI: **{scores_breakdown.get('ISM製造業PMI', 0):.1f} / 8.0**")
-                st.markdown(f"- 美國消費需求綜合: **{scores_breakdown.get('美國消費需求綜合', 0):.1f} / 6.0**")
+                
+                for key, details in scores_breakdown.items():
+                    if key in ["資金面與流動性", "GDP季增率", "ISM製造業PMI", "美國消費需求綜合"]:
+                        st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
+                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
         with st.expander("🔍 展開以查看所有指標原始數據", expanded=True):
 
