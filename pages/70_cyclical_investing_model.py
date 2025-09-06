@@ -121,12 +121,14 @@ with tab2:
                 st.markdown("##### 💼 微觀基本面")
                 micro_score = scores_breakdown.get('Mag7營收年增率', {}).get('score',0) + scores_breakdown.get('資本支出增長率', {}).get('score',0) + scores_breakdown.get('關鍵領先指標', {}).get('score',0)
                 st.progress(int(micro_score / 65 * 100), text=f"總分: {micro_score:.1f} / 65.0")
-
-                for key, details in scores_breakdown.items():
-                    if key in ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"]:
-                        st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
-                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
-                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
+                
+                # [修正 1] 調整排列順序
+                micro_order = ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"]
+                for key in micro_order:
+                    details = scores_breakdown.get(key, {})
+                    st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
+                    st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
+                    st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
         with col2:
             with st.container(border=True):
@@ -140,7 +142,7 @@ with tab2:
                         st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
                         st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
-        with st.expander("🔍 展開以查看所有指標原始數據", expanded=True):
+        with st.expander("🔍 展開以查看所有指標原始數據", expanded=False):
 
             # --- [v5.4.0] 全新的三頁籤佈局 ---
             exp_tabs = st.tabs(["產業數據", "總經數據", "領先指標"])
