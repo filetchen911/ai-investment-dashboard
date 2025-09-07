@@ -172,7 +172,7 @@ def run_j_vix_model(kdj_data, vix_data):
 
 def run_tech_model(financials, fred_data, dbnomics_data):
     """
-    [v5.4.0-rc8] 執行美股科技股總經模型，並回傳包含所有詳細評級的最終結果。
+    [v5.4.0-rc9 修正版] 執行美股科技股總經模型，並統一回傳的數據名稱。
     """
     print("\n> [模型二] 正在執行美股科技股總經模型 (V7.3)...")
     data = {}
@@ -300,9 +300,7 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         # 7. 消費
         retail_yoy = fred_data.get('美國零售銷售年增率 (%)').iloc[-1] / 100 if fred_data.get('美國零售銷售年增率 (%)') is not None and not fred_data.get('美國零售銷售年增率 (%)').empty else 0
         pce_yoy = fred_data.get('實質個人消費支出年增率 (%)').iloc[-1] / 100 if fred_data.get('實質個人消費支出年增率 (%)') is not None and not fred_data.get('實質個人消費支出年增率 (%)').empty else 0
-        data['retail_yoy'] = retail_yoy
-        data['pce_yoy'] = pce_yoy
-        retail_score, pce_score = 0, 0
+        data['retail_yoy'] = retail_yoy; data['pce_yoy'] = pce_yoy
         retail_rating, pce_rating = "消費衰退", "消費衰退"
         if retail_yoy > 0.05: retail_rating = "消費強勁"
         elif retail_yoy > 0.02: retail_rating = "消費穩健"
@@ -310,6 +308,7 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         if pce_yoy > 0.03: pce_rating = "消費強勁"
         elif pce_yoy > 0.02: pce_rating = "消費穩健"
         elif pce_yoy >= 0: pce_rating = "消費疲弱或放緩"
+        retail_score, pce_score = 0, 0
         if retail_yoy > 0.05: retail_score = 3.6
         elif retail_yoy > 0.02: retail_score = 2.5
         elif retail_yoy >= 0: retail_score = 1.0
@@ -351,17 +350,14 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         "scores_breakdown": {
             "Mag7營收年增率": {"score": scores['Mag7營收年增率'], "value": f"{data.get('mag7_agg_revenue_growth', 0):.2%}", "rating": rev_rating},
             "資本支出增長率": {"score": scores['資本支出增長率'], "value": f"{data.get('mag7_agg_capex_growth', 0):.2%}", "rating": capex_rating},
-            "關鍵領先指標": {"score": scores['關鍵領先指標'], 
-                           "value": f"TSM:{data.get('tsm_growth',0):.2%}, OECD:{data.get('oecd_cli_latest',0):.1f}, ISM:{data.get('ism_diff',0):.1f}", 
-                           "rating": f"TSM:{tsm_rating}, OECD:{oecd_rating}, ISM:{ism_diff_rating}"},
-            "資金面與流動性": {"score": scores['資金面與流動性'], 
-                             "value": f"利率:{data.get('current_fed_rate',0):.2f}%, 預期:{data.get('fomc_change_bp',0):.0f}bp", 
-                             "rating": f"利率:{rate_rating}, FOMC:{fomc_rating}"},
+            "關鍵領先指標": {"score": scores['關鍵領先指標'], "value": f"台積電營收年增率:{data.get('tsm_growth',0):.2%}, OECD領先指標:{data.get('oecd_cli_latest',0):.1f}, PMI-新訂單減客戶端存貨:{data.get('ism_diff',0):.1f}", 
+                               "rating": f"台積電營收年增率:{tsm_rating}, OECD領先指標:{oecd_rating}, PMI-新訂單減客戶端存貨:{ism_diff_rating}"},
+            "資金面與流動性": {"score": scores['資金面與流動性'], "value": f"Fed基準利率:{data.get('current_fed_rate',0):.2f}%, 未來一年升降息預期:{data.get('fomc_change_bp',0):.0f}bp", 
+                               "rating": f"Fed基準利率:{rate_rating}, 未來一年升降息預期:{fomc_rating}"}, # <-- [修正] 將 'FOMC' 改為 '預期'
             "GDP季增率": {"score": scores['GDP季增率'], "value": f"{data.get('gdp_growth', 0):.1f}%", "rating": gdp_rating},
             "ISM製造業PMI": {"score": scores['ISM製造業PMI'], "value": f"{data.get('ism_pmi', 0):.1f}", "rating": pmi_rating},
-            "美國消費需求綜合": {"score": scores['美國消費需求綜合'], 
-                               "value": f"零售:{data.get('retail_yoy',0):.2%}, PCE:{data.get('pce_yoy',0):.2%}", 
-                               "rating": f"零售:{retail_rating}, PCE:{pce_rating}"}
+            "美國消費需求綜合": {"score": scores['美國消費需求綜合'], "value": f"零售銷售:{data.get('retail_yoy',0):.2%}, 實質個人消費支出:{data.get('pce_yoy',0):.2%}", 
+                               "rating": f"零售銷售:{retail_rating}, 實質個人消費支出:{pce_rating}"}
         }
     }
 @functions_framework.http

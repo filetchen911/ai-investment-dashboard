@@ -26,18 +26,23 @@ def display_detailed_ratings(details):
             
         values = dict(item.split(':', 1) for item in value_str.split(', '))
         ratings = dict(item.split(':', 1) for item in rating_str.split(', '))
-        
-        st.caption("  ├─ 核心數值:")
+
+        # 使用 Markdown 和 HTML 的 <br> 來精準控制換行，避免 st.caption 的自動間距
+        markdown_lines = ["├─ 核心數值:"]
         
         sub_items = list(values.keys())
         for i, sub_key in enumerate(sub_items):
             is_last_item = (i == len(sub_items) - 1)
             
-            prefix_value = "  │ 	└─ " if is_last_item else "  │ 	├─ "
-            prefix_rating = "  │ 	 	└─ " if is_last_item else "  │ 	│ 	└─ "
+            prefix_value = "│  └─ " if is_last_item else "│  ├─ "
+            prefix_rating = "   └─ " if is_last_item else "│  └─ "
             
-            st.caption(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
-            st.caption(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
+            markdown_lines.append(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
+            markdown_lines.append(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
+        
+        # 將所有行合併成一個 Markdown 字串
+        final_markdown = "<br>".join(markdown_lines)
+        st.markdown(f"<div style='font-size: 0.9em; color: #808495;'>{final_markdown}</div>", unsafe_allow_html=True)
 
     except Exception:
         # 如果解析失敗，則退回顯示原始文字
