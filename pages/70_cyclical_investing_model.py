@@ -190,7 +190,7 @@ with tab2:
                     if key in ["資金面與流動性", "美國消費需求綜合"]:
                         display_detailed_ratings(details)
                     else:
-                        st.caption(f"├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"├─ {key}: {details.get('value', 'N/A')}")
                         st.caption(f"└─ 評級: {details.get('rating', 'N/A')}")
 
         with st.expander("🔍 展開以查看所有指標原始數據", expanded=False):
