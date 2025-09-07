@@ -27,17 +27,19 @@ def display_detailed_ratings(details):
         values = dict(item.split(':', 1) for item in value_str.split(', '))
         ratings = dict(item.split(':', 1) for item in rating_str.split(', '))
         
-        st.caption("├─ 核心數值:")
+        #st.caption("├─ 核心數值:")
         
         sub_items = list(values.keys())
         for i, sub_key in enumerate(sub_items):
             is_last_item = (i == len(sub_items) - 1)
             
-            prefix_value = "│  └─ " if is_last_item else "│  ├─ "
-            prefix_rating = "   └─ " if is_last_item else "│  └─ "
+            #prefix_value = "│  └─ " if is_last_item else "│  ├─ "
+            #prefix_rating = "   └─ " if is_last_item else "│  └─ "
             
-            st.caption(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
-            st.caption(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
+            #st.caption(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
+            #st.caption(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
+            st.caption(f"  ├─ {sub_key}: {values.get(sub_key, 'N/A')}")
+            st.caption(f"  └─ 評級: {ratings.get(sub_key, 'N/A')}")            
 
     except Exception:
         # 如果解析失敗，則退回顯示原始文字
@@ -170,7 +172,8 @@ with tab2:
                     if key in ["關鍵領先指標"]:
                         display_detailed_ratings(details)
                     else:
-                        st.caption(f"├─ 核心數值: {details.get('value', 'N/A')}")
+                        #st.caption(f"├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"├─ {key}: {details.get('value', 'N/A')}")
                         st.caption(f"└─ 評級: {details.get('rating', 'N/A')}")
 
         with col2:
