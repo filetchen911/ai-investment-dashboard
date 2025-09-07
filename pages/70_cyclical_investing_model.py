@@ -26,9 +26,8 @@ def display_detailed_ratings(details):
             
         values = dict(item.split(':', 1) for item in value_str.split(', '))
         ratings = dict(item.split(':', 1) for item in rating_str.split(', '))
-
-        # 使用 Markdown 和 HTML 的 <br> 來精準控制換行，避免 st.caption 的自動間距
-        markdown_lines = ["├─ 核心數值:"]
+        
+        st.caption("├─ 核心數值:")
         
         sub_items = list(values.keys())
         for i, sub_key in enumerate(sub_items):
@@ -37,12 +36,8 @@ def display_detailed_ratings(details):
             prefix_value = "│  └─ " if is_last_item else "│  ├─ "
             prefix_rating = "   └─ " if is_last_item else "│  └─ "
             
-            markdown_lines.append(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
-            markdown_lines.append(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
-        
-        # 將所有行合併成一個 Markdown 字串
-        final_markdown = "<br>".join(markdown_lines)
-        st.markdown(f"<div style='font-size: 0.9em; color: #808495;'>{final_markdown}</div>", unsafe_allow_html=True)
+            st.caption(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
+            st.caption(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
 
     except Exception:
         # 如果解析失敗，則退回顯示原始文字
@@ -151,44 +146,49 @@ with tab2:
         st.header("📊 模型評分細項")
 
         scores_breakdown = tech_model_data.get('scores_breakdown', {})
-
+        
+        # [v5.4.0-rc10 修正] 建立滿分字典
+        max_scores = {
+            "Mag7營收年增率": 30.0, "資本支出增長率": 20.0, "關鍵領先指標": 15.0,
+            "資金面與流動性": 12.0, "GDP季增率": 9.0, "ISM製造業PMI": 8.0, "美國消費需求綜合": 6.0
+        }
+        
         col1, col2 = st.columns(2)
         with col1:
             with st.container(border=True):
                 st.markdown("##### 💼 微觀基本面")
-                micro_score = scores_breakdown.get('Mag7營收年增率', {}).get('score',0) + scores_breakdown.get('資本支出增長率', {}).get('score',0) + scores_breakdown.get('關鍵領先指標', {}).get('score',0)
+                micro_score = sum(scores_breakdown.get(k, {}).get('score', 0) for k in ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"])
                 st.progress(int(micro_score / 65 * 100), text=f"總分: {micro_score:.1f} / 65.0")
                 
                 # [修正 1] 調整排列順序
                 micro_order = ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"]
                 for key in micro_order:
                     details = scores_breakdown.get(key, {})
-                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f}**")
+                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f} / {max_scores.get(key, 0):.1f}**") # <-- 加上分母
                     
                     # [優化] 針對綜合指標，使用新的樹狀顯示函式
                     if key in ["關鍵領先指標"]:
                         display_detailed_ratings(details)
-                    else: # 對於單一指標，維持原樣
-                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
-                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
+                    else:
+                        st.caption(f"├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"└─ 評級: {details.get('rating', 'N/A')}")
 
         with col2:
             with st.container(border=True):
                 st.markdown("##### 🌍 總經環境")
-                macro_score = scores_breakdown.get('資金面與流動性', {}).get('score',0) + scores_breakdown.get('GDP季增率', {}).get('score',0) + scores_breakdown.get('ISM製造業PMI', {}).get('score',0) + scores_breakdown.get('美國消費需求綜合', {}).get('score',0)
+                macro_score = sum(scores_breakdown.get(k, {}).get('score', 0) for k in ["資金面與流動性", "GDP季增率", "ISM製造業PMI", "美國消費需求綜合"])
                 st.progress(int(macro_score / 35 * 100), text=f"總分: {macro_score:.1f} / 35.0")
                 
                 macro_order = ["GDP季增率", "資金面與流動性", "ISM製造業PMI", "美國消費需求綜合"]
                 for key in macro_order:
                     details = scores_breakdown.get(key, {})
-                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f}**")
-                    
-                    # [優化] 針對綜合指標，使用新的樹狀顯示函式
+                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f} / {max_scores.get(key, 0):.1f}**") # <-- 加上分母
+
                     if key in ["資金面與流動性", "美國消費需求綜合"]:
                         display_detailed_ratings(details)
-                    else: # 對於單一指標，維持原樣
-                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
-                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
+                    else:
+                        st.caption(f"├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"└─ 評級: {details.get('rating', 'N/A')}")
 
         with st.expander("🔍 展開以查看所有指標原始數據", expanded=False):
 
