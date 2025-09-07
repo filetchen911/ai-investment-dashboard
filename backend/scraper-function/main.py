@@ -212,31 +212,42 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         if 'TSM' in financials and "Total Revenue" in financials['TSM']['quarterly_financials'].index:
             rev = financials['TSM']['quarterly_financials'].loc["Total Revenue"]
             data['tsm_growth'] = (rev.iloc[0] - rev.iloc[4]) / rev.iloc[4] if len(rev) >= 5 else 0
-            if data['tsm_growth'] >= 0.20: tsm_score = 6; tsm_rating = "高端需求強勁"
-            elif data['tsm_growth'] >= 0.10: tsm_score = 4; tsm_rating = "需求穩健"
-            elif data['tsm_growth'] >= 0: tsm_score = 2; tsm_rating = "需求放緩"
+            if data['tsm_growth'] > 0.20: tsm_rating = "高端需求強勁"
+            elif data['tsm_growth'] > 0.10: tsm_rating = "需求穩健"
+            elif data['tsm_growth'] >= 0: tsm_rating = "需求放緩"
             else: tsm_rating = "需求衰退"
+            if data['tsm_growth'] >= 0.20: tsm_score = 6
+            elif data['tsm_growth'] >= 0.10: tsm_score = 4
+            elif data['tsm_growth'] >= 0: tsm_score = 2
 
         oecd_cli = dbnomics_data.get("OECD 美國領先指標")
         if oecd_cli is not None and len(oecd_cli) > 0:
             data['oecd_cli_latest'] = oecd_cli.iloc[-1]
-            if data['oecd_cli_latest'] >= 101: oecd_score += 4; oecd_rating = "明確擴張"
-            elif data['oecd_cli_latest'] >= 100.5: oecd_score += 3; oecd_rating = "溫和擴張"
-            elif data['oecd_cli_latest'] >= 100: oecd_score += 2; oecd_rating = "輕微擴張"
-            elif data['oecd_cli_latest'] >= 99.5: oecd_score += 1; oecd_rating = "輕微收縮"
-            else: oecd_rating = "明確收縮" # <99.5
+            if data['oecd_cli_latest'] > 101: oecd_rating = "明確擴張"
+            elif data['oecd_cli_latest'] > 100.5: oecd_rating = "溫和擴張"
+            elif data['oecd_cli_latest'] > 100: oecd_rating = "輕微擴張"
+            elif data['oecd_cli_latest'] > 99.5: oecd_rating = "輕微收縮"
+            elif data['oecd_cli_latest'] > 99: oecd_rating = "溫和收縮"
+            else: oecd_rating = "明確收縮"
+            if data['oecd_cli_latest'] >= 101: oecd_score += 4
+            elif data['oecd_cli_latest'] >= 100.5: oecd_score += 3
+            elif data['oecd_cli_latest'] >= 100: oecd_score += 2
+            elif data['oecd_cli_latest'] >= 99.5: oecd_score += 1
             if len(oecd_cli) >= 3 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2] and oecd_cli.iloc[-2] > oecd_cli.iloc[-3]: oecd_score += 2
             elif len(oecd_cli) >= 2 and oecd_cli.iloc[-1] > oecd_cli.iloc[-2]: oecd_score += 1
 
         ism_new_orders = dbnomics_data.get("新訂單", pd.Series([0]))
         ism_inventories = dbnomics_data.get("客戶端存貨", pd.Series([0]))
-        ism_diff = ism_new_orders.iloc[-1] - ism_inventories.iloc[-1] if len(ism_new_orders) > 0 and len(ism_inventories) > 0 else 0
-        data['ism_diff'] = ism_diff
-        if ism_diff >= 10: ism_diff_score = 3; ism_diff_rating = "需求強勁超越供給"
-        elif ism_diff >= 5: ism_diff_score = 2.5; ism_diff_rating = "需求穩健成長"
-        elif ism_diff >= 0: ism_diff_score = 2; ism_diff_rating = "供需接近平衡"
-        elif ism_diff >= -5: ism_diff_score = 1; ism_diff_rating = "供給略大於需求"
+        data['ism_diff'] = ism_new_orders.iloc[-1] - ism_inventories.iloc[-1] if len(ism_new_orders) > 0 and len(ism_inventories) > 0 else 0
+        if data['ism_diff'] > 10: ism_diff_rating = "需求強勁超越供給"
+        elif data['ism_diff'] > 5: ism_diff_rating = "需求穩健成長"
+        elif data['ism_diff'] >= 0: ism_diff_rating = "供需接近平衡"
+        elif data['ism_diff'] >= -5: ism_diff_rating = "供給略大於需求"
         else: ism_diff_rating = "明顯供過於求"
+        if data['ism_diff'] >= 10: ism_diff_score = 3
+        elif data['ism_diff'] >= 5: ism_diff_score = 2.5
+        elif data['ism_diff'] >= 0: ism_diff_score = 2
+        elif data['ism_diff'] >= -5: ism_diff_score = 1
         scores['關鍵領先指標'] = tsm_score + oecd_score + ism_diff_score
 
         # --- 總經環境 ---
@@ -244,22 +255,28 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         rate = fred_data.get('聯邦基金利率').iloc[-1] if fred_data.get('聯邦基金利率') is not None and not fred_data.get('聯邦基金利率').empty else 0
         data['current_fed_rate'] = rate
         rate_level_score = 0; rate_rating = "N/A"
-        if rate < 3: rate_level_score = 6; rate_rating = "寬鬆政策"
-        elif rate < 4: rate_level_score = 5; rate_rating = "中性偏寬鬆"
+        if rate < 3: rate_level_score = 5; rate_rating = "寬鬆政策"
+        elif rate < 4: rate_level_score = 4; rate_rating = "中性偏寬鬆"
         elif rate < 5: rate_level_score = 3; rate_rating = "中性"
         elif rate < 6: rate_level_score = 2; rate_rating = "中性偏緊"
-        else: rate_rating = "明顯緊縮"
+        else: rate_level_score = 1; rate_rating = "明顯緊縮"
         
         dot_plot = fred_data.get('FOMC利率點陣圖中位數')
         fomc_score = 0; fomc_rating = "N/A"
         if dot_plot is not None and len(dot_plot) >= 3:
             change_bp = (dot_plot.iloc[-2] - rate) * 100
             data['fomc_change_bp'] = change_bp
-            if change_bp < -200: fomc_score = 6; fomc_rating = "大幅寬鬆預期"
-            elif -200 <= change_bp <= -100: fomc_score = 5; fomc_rating = "明顯寬鬆預期"
-            elif -100 < change_bp < 0: fomc_score = 3; fomc_rating = "溫和寬鬆預期"
-            elif 0 <= change_bp <= 25: fomc_score = 2; fomc_rating = "政策中性"
-            else: fomc_score = 0; fomc_rating = "緊縮預期"
+            if change_bp < -200: fomc_rating = "大幅寬鬆預期"
+            elif change_bp < -100: fomc_rating = "明顯寬鬆預期"
+            elif change_bp < 0: fomc_rating = "溫和寬鬆預期"
+            elif change_bp <= 25: fomc_rating = "政策中性"
+            elif change_bp <= 100: fomc_rating = "溫和緊縮預期"
+            else: fomc_rating = "明顯緊縮預期"
+            if change_bp < -200: fomc_score = 5
+            elif -200 <= change_bp <= -100: fomc_score = 4
+            elif -100 < change_bp < 0: fomc_score = 3
+            elif 0 <= change_bp <= 25: fomc_score = 2
+            elif change_bp <= 100: fomc_score = 1
         scores['資金面與流動性'] = rate_level_score + fomc_score
 
         # 5. GDP
@@ -287,12 +304,18 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         data['pce_yoy'] = pce_yoy
         retail_score, pce_score = 0, 0
         retail_rating, pce_rating = "消費衰退", "消費衰退"
-        if retail_yoy > 0.05: retail_score = 3.6; retail_rating = "消費強勁"
-        elif retail_yoy > 0.02: retail_score = 2.5; retail_rating = "消費穩健"
-        elif retail_yoy >= 0: retail_score = 1.0; retail_rating = "消費疲弱或放緩"
-        if pce_yoy > 0.03: pce_score = 2.4; pce_rating = "消費強勁"
-        elif pce_yoy > 0.02: pce_score = 1.8; pce_rating = "消費穩健"
-        elif pce_yoy >= 0: pce_score = 0.8; pce_rating = "消費疲弱或放緩"
+        if retail_yoy > 0.05: retail_rating = "消費強勁"
+        elif retail_yoy > 0.02: retail_rating = "消費穩健"
+        elif retail_yoy >= 0: retail_rating = "消費疲弱或放緩"
+        if pce_yoy > 0.03: pce_rating = "消費強勁"
+        elif pce_yoy > 0.02: pce_rating = "消費穩健"
+        elif pce_yoy >= 0: pce_rating = "消費疲弱或放緩"
+        if retail_yoy > 0.05: retail_score = 3.6
+        elif retail_yoy > 0.02: retail_score = 2.5
+        elif retail_yoy >= 0: retail_score = 1.0
+        if pce_yoy > 0.03: pce_score = 2.4
+        elif pce_yoy > 0.02: pce_score = 1.8
+        elif pce_yoy >= 0: pce_score = 0.8
         scores['美國消費需求綜合'] = retail_score + pce_score
         
     except Exception as e:
@@ -328,13 +351,16 @@ def run_tech_model(financials, fred_data, dbnomics_data):
         "scores_breakdown": {
             "Mag7營收年增率": {"score": scores['Mag7營收年增率'], "value": f"{data.get('mag7_agg_revenue_growth', 0):.2%}", "rating": rev_rating},
             "資本支出增長率": {"score": scores['資本支出增長率'], "value": f"{data.get('mag7_agg_capex_growth', 0):.2%}", "rating": capex_rating},
-            "關鍵領先指標": {"score": scores['關鍵領先指標'], "value": f"TSM:{data.get('tsm_growth',0):.1%}, OECD:{data.get('oecd_cli_latest',0):.1f}, ISM:{data.get('ism_diff',0):.1f}", 
-                               "rating": f"TSM:{tsm_rating}, OECD:{oecd_rating}, ISM:{ism_diff_rating}"},
-            "資金面與流動性": {"score": scores['資金面與流動性'], "value": f"利率:{data.get('current_fed_rate',0):.2f}%, 預期:{data.get('fomc_change_bp',0):.0f}bp", 
-                               "rating": f"利率:{rate_rating}, FOMC:{fomc_rating}"},
+            "關鍵領先指標": {"score": scores['關鍵領先指標'], 
+                           "value": f"TSM:{data.get('tsm_growth',0):.2%}, OECD:{data.get('oecd_cli_latest',0):.1f}, ISM:{data.get('ism_diff',0):.1f}", 
+                           "rating": f"TSM:{tsm_rating}, OECD:{oecd_rating}, ISM:{ism_diff_rating}"},
+            "資金面與流動性": {"score": scores['資金面與流動性'], 
+                             "value": f"利率:{data.get('current_fed_rate',0):.2f}%, 預期:{data.get('fomc_change_bp',0):.0f}bp", 
+                             "rating": f"利率:{rate_rating}, FOMC:{fomc_rating}"},
             "GDP季增率": {"score": scores['GDP季增率'], "value": f"{data.get('gdp_growth', 0):.1f}%", "rating": gdp_rating},
             "ISM製造業PMI": {"score": scores['ISM製造業PMI'], "value": f"{data.get('ism_pmi', 0):.1f}", "rating": pmi_rating},
-            "美國消費需求綜合": {"score": scores['美國消費需求綜合'], "value": f"零售:{data.get('retail_yoy',0):.1%}, PCE:{data.get('pce_yoy',0):.1%}", 
+            "美國消費需求綜合": {"score": scores['美國消費需求綜合'], 
+                               "value": f"零售:{data.get('retail_yoy',0):.2%}, PCE:{data.get('pce_yoy',0):.2%}", 
                                "rating": f"零售:{retail_rating}, PCE:{pce_rating}"}
         }
     }

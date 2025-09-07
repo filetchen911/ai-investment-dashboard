@@ -13,6 +13,38 @@ render_sidebar()
 
 st.title("📈 週期投資策略模擬器")
 
+# --- 輔助函式：用於解析詳細評級 ---
+def display_detailed_ratings(details):
+    try:
+        value_str = details.get('value', '')
+        rating_str = details.get('rating', '')
+
+        # 處理空的或格式不符的字串
+        if not value_str or not rating_str:
+            st.caption(f"  └─ 評級: {rating_str or 'N/A'}")
+            return
+            
+        values = dict(item.split(':', 1) for item in value_str.split(', '))
+        ratings = dict(item.split(':', 1) for item in rating_str.split(', '))
+        
+        st.caption("  ├─ 核心數值:")
+        
+        sub_items = list(values.keys())
+        for i, sub_key in enumerate(sub_items):
+            is_last_item = (i == len(sub_items) - 1)
+            
+            prefix_value = "  │ 	└─ " if is_last_item else "  │ 	├─ "
+            prefix_rating = "  │ 	 	└─ " if is_last_item else "  │ 	│ 	└─ "
+            
+            st.caption(f"{prefix_value}{sub_key}: {values.get(sub_key, 'N/A')}")
+            st.caption(f"{prefix_rating}評級: {ratings.get(sub_key, 'N/A')}")
+
+    except Exception:
+        # 如果解析失敗，則退回顯示原始文字
+        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
+        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
+
+
 # --- 身份驗證檢查 ---
 if 'user_id' not in st.session_state:
     st.info("請先從主頁面登入，以使用此功能。")
@@ -108,7 +140,7 @@ with tab2:
         
         # 顯示詳細的情境描述
         if scenario_details:
-            st.info(scenario_details)
+            st.info(f"**情境特徵**: {scenario_details}")
 
         st.markdown("---")
         st.header("📊 模型評分細項")
@@ -126,9 +158,14 @@ with tab2:
                 micro_order = ["Mag7營收年增率", "資本支出增長率", "關鍵領先指標"]
                 for key in micro_order:
                     details = scores_breakdown.get(key, {})
-                    st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
-                    st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
-                    st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
+                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f}**")
+                    
+                    # [優化] 針對綜合指標，使用新的樹狀顯示函式
+                    if key in ["關鍵領先指標"]:
+                        display_detailed_ratings(details)
+                    else: # 對於單一指標，維持原樣
+                        st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
+                        st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
         with col2:
             with st.container(border=True):
@@ -136,9 +173,15 @@ with tab2:
                 macro_score = scores_breakdown.get('資金面與流動性', {}).get('score',0) + scores_breakdown.get('GDP季增率', {}).get('score',0) + scores_breakdown.get('ISM製造業PMI', {}).get('score',0) + scores_breakdown.get('美國消費需求綜合', {}).get('score',0)
                 st.progress(int(macro_score / 35 * 100), text=f"總分: {macro_score:.1f} / 35.0")
                 
-                for key, details in scores_breakdown.items():
-                    if key in ["資金面與流動性", "GDP季增率", "ISM製造業PMI", "美國消費需求綜合"]:
-                        st.markdown(f"- {key}: **{details.get('score', 0):.1f}**")
+                macro_order = ["GDP季增率", "資金面與流動性", "ISM製造業PMI", "美國消費需求綜合"]
+                for key in macro_order:
+                    details = scores_breakdown.get(key, {})
+                    st.markdown(f"**{key}**: **{details.get('score', 0):.1f}**")
+                    
+                    # [優化] 針對綜合指標，使用新的樹狀顯示函式
+                    if key in ["資金面與流動性", "美國消費需求綜合"]:
+                        display_detailed_ratings(details)
+                    else: # 對於單一指標，維持原樣
                         st.caption(f"  ├─ 核心數值: {details.get('value', 'N/A')}")
                         st.caption(f"  └─ 評級: {details.get('rating', 'N/A')}")
 
