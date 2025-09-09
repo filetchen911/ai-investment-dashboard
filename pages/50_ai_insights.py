@@ -1,102 +1,141 @@
 # file: pages/50_ai_insights.py
+# version: v5.5.0 (與現有應用框架完全相容)
 
 import streamlit as st
-import datetime
-import time
-
+import pytz
+from datetime import datetime
 from utils import (
-    init_firebase, 
-    load_latest_insights, 
     render_sidebar,
-    get_general_analysis_status,    # [v5.2.0] 引入新的輔助函式
-    trigger_general_analysis,       # [v5.2.0] 引入新的輔助函式
-    trigger_personal_insight        # [v5.2.0] 引入新的輔助函式
+    init_firebase,
+    get_general_analysis_status,
+    trigger_general_analysis
 )
 
+# 遵循現有頁面模式：首先渲染側邊欄
 render_sidebar()
 
+# 遵循現有頁面模式：設定頁面標題
 st.set_page_config(layout="wide")
 st.title("💡 AI 每日市場洞察")
+st.caption("此頁面提供由大型語言模型(LLM)生成的每日通用市場分析，整合了宏觀數據與量化模型，以提供客觀的市場洞察。")
 
-# --- 身份驗證與初始化 ---
+# 遵循現有頁面模式：進行身份驗證檢查
 if 'user_id' not in st.session_state:
-    st.info("請先從主頁面登入，以查看您的個人化 AI 洞見。")
+    st.info("請先從主頁面登入，以使用此功能。")
     st.stop()
 
+# 遵循現有頁面模式：初始化必要的變數
 user_id = st.session_state['user_id']
 db, _ = init_firebase()
 
+# --------------------------------------------------------------------------------
+# 顯示報告專用的函式 (這是一個獨立的輔助函式，可以安全地放在檔案頂部)
+# --------------------------------------------------------------------------------
+def display_analysis_report(data: dict):
+    """
+    專門用來渲染新版 AI 分析報告的函式
+    """
+    # --- 區塊 1: 報告標題與整體情緒 ---
+    st.subheader(data.get("report_title", "今日市場分析"))
 
-# --- [v5.2.0-rc3 修正] 按鈕移至登入檢查內部 ---
-if st.button("🚀 產生今日 AI 洞察"):
-    with st.spinner("正在檢查您的分析狀態..."):
-        # 檢查點 1：使用者個人當日報告是否已存在？
-        if load_latest_insights(user_id):
-            # [v5.2.0-rc3 修正] 移除 st.stop()，讓頁面繼續渲染已存在的報告
-            st.info("✅ 您今日的個人化分析報告已存在。")
+    sentiment_map = {
+        "樂觀": "🔥", "謹慎樂觀": "🟢", "中性": "⚪",
+        "謹慎悲觀": "🟠", "悲觀": "🥶"
+    }
+    sentiment_icon = sentiment_map.get(data.get("overall_sentiment"), "❓")
+    st.metric(label="市場整體情緒", value=f"{sentiment_icon} {data.get('overall_sentiment', '未知')}")
+
+    st.divider()
+
+    # --- 區塊 2: 分析摘要 ---
+    st.markdown("##### 📈 分析摘要")
+    st.write(data.get("analysis_summary", "摘要內容缺失。"))
+
+    st.divider()
+
+    # --- 區塊 3: 正反方因子 (使用雙欄佈局) ---
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("##### ✅ 正面支撐因子")
+        positive_factors = data.get("positive_factors", [])
+        if not positive_factors:
+            st.info("報告中未提及主要的正面因子。")
         else:
-            # 檢查點 2：通用的「市場分析」快取是否存在且夠新？
-            st.write(" > 正在檢查通用市場分析快取...")
-            status = get_general_analysis_status()
+            for factor in positive_factors:
+                with st.expander(f"**{factor.get('factor', '未知因子')}**", expanded=True):
+                    st.markdown(f"**- 證據:** {factor.get('evidence', '無')}")
+                    st.markdown(f"**- 影響:** {factor.get('implication', '無')}")
 
-            if not status["exists"] or not status["is_fresh"]:
-                st.write(" > 通用分析不存在或已過時，正在啟動深層分析（可能需要1-2分鐘）...")
-                success_general = trigger_general_analysis()
-                if not success_general:
-                    st.error("通用市場分析失敗，請稍後再試。")
-                    st.stop()
-            else:
-                st.write(" > 發現新鮮的通用市場分析，正在使用快取...")
+    with col2:
+        st.markdown("##### ⚠️ 潛在風險因子")
+        risk_factors = data.get("risk_factors", [])
+        if not risk_factors:
+            st.info("報告中未提及主要的風險因子。")
+        else:
+            for factor in risk_factors:
+                with st.expander(f"**{factor.get('factor', '未知因子')}**", expanded=True):
+                    st.markdown(f"**- 證據:** {factor.get('evidence', '無')}")
+                    st.markdown(f"**- 影響:** {factor.get('implication', '無')}")
 
-            # 檢查點 3：產生個人化分析
-            st.write(" > 正在為您產生個人化影響分析...")
-            success_personal = trigger_personal_insight(user_id)
-            if success_personal:
-                # --- [v5.2.0-rc7 快取修正] ---
-                # 在刷新頁面前，手動清除所有數據快取
-                st.cache_data.clear()
-                # --- [修正結束] ---                
-                st.success("分析報告已成功產生！頁面將在2秒後自動刷新。")
-                time.sleep(2)
+    st.divider()
+
+    # --- 區塊 4: 投資結論 ---
+    st.markdown("##### 🧭 投資結論")
+    st.info(data.get("investment_conclusion", "結論內容缺失。"), icon="💡")
+
+# --------------------------------------------------------------------------------
+# 頁面主體邏輯 (直接在頂層執行，不使用 main() 函式)
+# --------------------------------------------------------------------------------
+
+# 使用 utils 中的函式檢查快取狀態
+with st.spinner("正在檢查最新的 AI 洞察報告..."):
+    analysis_status = get_general_analysis_status()
+
+# 情況一: 報告已存在
+if analysis_status.get("exists") and analysis_status.get("data"):
+    report_data = analysis_status["data"]
+
+    # 顯示報告更新時間
+    try:
+        last_updated_raw = report_data.get('last_updated')
+        if isinstance(last_updated_raw, str):
+            last_updated_utc = datetime.fromisoformat(last_updated_raw.replace('Z', '+00:00'))
+        else:
+            last_updated_utc = last_updated_raw.replace(tzinfo=pytz.UTC)
+        
+        taipei_tz = pytz.timezone("Asia/Taipei")
+        last_updated_taipei = last_updated_utc.astimezone(taipei_tz)
+        st.caption(f"上次分析時間: {last_updated_taipei.strftime('%Y-%m-%d %H:%M:%S')} (台北時間)")
+    except Exception:
+        # 如果時間解析失敗，優雅地跳過
+        pass
+
+    # 呼叫專用函式來顯示報告
+    display_analysis_report(report_data)
+
+    st.divider()
+
+    # 提供一個手動刷新的按鈕
+    if st.button("🔄 強制刷新分析報告"):
+        with st.spinner("正在強制觸發後端分析服務，請稍候..."):
+            success = trigger_general_analysis()
+            if success:
+                st.success("刷新請求已送出！頁面將在幾秒後自動重載以獲取最新報告。")
+                st.cache_data.clear() # 清除前端快取
                 st.rerun()
             else:
-                st.error("產生個人化報告時失敗，請稍後再試。")
+                st.error("刷新失敗，請檢查後端服務日誌。")
 
-
-# --- 頁面主要邏輯 ---
-insights_data = load_latest_insights(user_id)
-
-if insights_data:
-    # --- [v5.2.0-rc4 修正] ---
-    # 從 insights_data 字典中讀取真實的分析時間 ('date' 欄位)
-    # 若找不到 'date' 欄位，則退回顯示當前時間作為備用
-    analysis_time = insights_data.get('date', datetime.datetime.now())
-    
-    # 使用讀取到的 analysis_time 來格式化並顯示
-    st.caption(f"上次分析時間: {analysis_time.strftime('%Y-%m-%d %H:%M')} (台北時間)")
-    # --- [修正結束] ---
-    
-    st.subheader("今日市場總結")
-    st.info(insights_data.get('market_summary', '暫無總結。'))
-    
-    st.subheader("對您投資組合的潛在影響")
-    st.warning(insights_data.get('portfolio_impact', '暫無影響分析。'))
-    
-    st.markdown("---")
-    
-    st.subheader("核心洞見摘要")
-    key_takeaways = insights_data.get('key_takeaways', [])
-    
-    if not key_takeaways:
-        st.write("今日無核心洞見。")
-    else:
-        for item in key_takeaways:
-            icon = "📊" if item.get('type') == '數據洞見' else "📰"
-            with st.container(border=True):
-                st.markdown(f"**{icon} {item.get('type', '洞見')}** | 來源：{item.get('source', '未知')}")
-                st.write(item.get('content', ''))
-                if item.get('type') == '新聞洞見' and item.get('link'):
-                    st.link_button("查看原文", item['link'])
-                    
+# 情況二: 報告不存在
 else:
-    st.info("今日的 AI 分析尚未生成。您可以點擊上方的按鈕來立即產生。")
+    st.info("今日尚無通用市場分析報告。您可以點擊下方按鈕立即產生。")
+    if st.button("🚀 產生今日市場洞察報告"):
+        with st.spinner("首次產生報告需要約 1-2 分鐘，請耐心等候..."):
+            success = trigger_general_analysis()
+            if success:
+                st.success("報告已成功生成！頁面將自動刷新。")
+                st.cache_data.clear() # 清除前端快取
+                st.rerun()
+            else:
+                st.error("報告生成失敗，請稍後再試或聯繫管理員。")
