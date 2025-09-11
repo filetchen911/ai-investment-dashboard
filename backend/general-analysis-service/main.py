@@ -22,22 +22,42 @@ except ValueError:
     print("ℹ️ Firebase App 已被初始化，跳過。")
 
 # --- 輔助函式 (新聞抓取 & 數據引擎) ---
-
-def get_finance_news_from_rss(rss_urls):
-    """從多個 RSS 來源抓取最新的財經新聞標題。"""
-    print("  > [News Engine] 開始抓取 RSS 新聞...")
+def get_finance_news_from_rss(rss_urls, keywords):
+    """
+    [v5.5.4 優化] 從 RSS 抓取新聞，並根據關鍵字進行排序，提升相關性。
+    """
+    print("  > [News Engine v2.0] 開始抓取並過濾 RSS 新聞...")
     all_news = []
+    seen_links = set()
+
     for rss_url in rss_urls:
         try:
             feed = feedparser.parse(rss_url)
-            source_name = feed.feed.title if hasattr(feed.feed, 'title') else 'Unknown Source'
-            for entry in feed.entries[:7]:
-                if entry.title and entry.link and entry.link not in [n['link'] for n in all_news]:
-                    all_news.append({"title": entry.title, "link": entry.link, "source": source_name})
+            source_name = feed.feed.get('title', 'Unknown Source')
+            for entry in feed.entries[:10]: # 稍微多抓一點作為篩選基數
+                if entry.link not in seen_links:
+                    all_news.append({
+                        "title": entry.get('title', 'No Title'),
+                        "link": entry.get('link'),
+                        "source": source_name
+                    })
+                    seen_links.add(entry.link)
         except Exception as e:
             print(f"    - 錯誤：從 {rss_url} 獲取新聞時發生錯誤: {e}")
-    print(f"  > [News Engine] 總共從 RSS 抓取到 {len(all_news)} 條新聞。")
-    return all_news
+
+    # 根據關鍵字進行排序
+    # 標題中包含關鍵字的新聞，其 'priority' 會是 0，否則為 1，排序時會被排在前面
+    for news in all_news:
+        news['priority'] = 1
+        for keyword in keywords:
+            if keyword.lower() in news['title'].lower():
+                news['priority'] = 0
+                break # 只要匹配到一個關鍵字就給予高優先級
+
+    sorted_news = sorted(all_news, key=lambda x: x['priority'])
+    
+    print(f"  > [News Engine v2.0] 總共抓取 {len(all_news)} 條，篩選排序後回傳。")
+    return sorted_news
 
 def get_latest_model_data(db_client):
     # 此函式已有診斷日誌，保持不變，以便追蹤
@@ -82,7 +102,6 @@ def get_latest_model_data(db_client):
         return None
 
 def analyze_market_with_models(model_data_raw, news_list):
-    """[v5.5.3] 修正數據結構層級不匹配的錯誤"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -91,7 +110,6 @@ def analyze_market_with_models(model_data_raw, news_list):
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-        # [v5.5.3 BUG FIX] 真正要用的數據在 'data' 這個子欄位中
         model_data = model_data_raw.get('data', {})
         if not model_data:
             # 如果連 'data' 這個主欄位都沒有，就拋出錯誤
@@ -126,8 +144,7 @@ def analyze_market_with_models(model_data_raw, news_list):
         sp500_mid_term_signal = sp500_signals.get('mid_term_pullback', False)
         sp500_inventory_cycle_signal = sp500_signals.get('inventory_cycle', False)
 
-        news_text = "\n".join([f"- {news.get('title', '無標題新聞')}" for news in news_list[:15]]) or "今日無相關市場新聞。"
-
+        news_text = "\n".join([f"- [{news.get('source', '未知來源')}] {news.get('title', '無標題新聞')}" for news in news_list[:15]]) or "..."
         # --- 步驟 2: 建立專家級 Prompt (使用 safe_format) ---
         prompt = f"""
         你的角色是一位頂尖的量化策略師與宏觀經濟學家，任職於一家專注於科技股的避險基金。你的任務是為內部投資委員會撰寫每日市場分析報告。
@@ -184,6 +201,14 @@ def analyze_market_with_models(model_data_raw, news_list):
         }}
         """
 
+        # --- [偵錯] 新增日誌紀錄 ---
+        print("-" * 50)
+        print(">>> 即將傳送給 AI 的完整 Prompt 內容：")
+        print(prompt)
+        print("--- END OF PROMPT ---")
+        print("-" * 50)
+        # --- [偵錯] 新增結束 ---
+
         response = model.generate_content(prompt)
         raw_response = response.text
         json_match = re.search(r'```json\s*(\{.*?\})\s*```', raw_response, re.DOTALL)
@@ -221,14 +246,40 @@ def generate_general_analysis(request):
     # --- 新報告產生流程 ---
     try:
         print("  > [新報告產生流程] 開始抓取數據...")
-        rss_urls = [
-            "https://feeds.bloomberg.com/technology/news.rss", # 彭博科技
-            "https://tw.stock.yahoo.com/rss-index/", # 雅虎財經（台灣Yahoo奇摩官方RSS）
-            "http://feeds.reuters.com/reuters/businessNews", # 路透社商業
-            "https://news.cnyes.com/rss/channel/tw_stock", # 鉅亨網-台股
-            "https://news.cnyes.com/rss/channel/us_stock" # 鉅亨網-美股            
+
+        # [優化二] 定義新聞過濾關鍵字
+        news_keywords = [
+            "Fed", "聯準會", "FOMC", "利率", "通膨", "CPI", "PCE", "PMI", "GDP", "財報",
+            "NVIDIA", "輝達", "AVGO", "博通", "蘋果", "台積電", "TSMC", "半導體", "AI", "晶片", "伺服器",
+            "台股", "美股", "納斯達克", "NASDAQ"
         ]
-        raw_news_list = get_finance_news_from_rss(rss_urls)
+
+        # 2. 取得上一個月份來產生動態關鍵字
+        #    財政部通常在每月7-10號公布上個月的出口數據，因此我們總是關注上一個月的出口新聞。
+        today = datetime.date.today()
+        #    一個簡單可靠的回推月份方式是減去約15天，確保日期必定落在上一個月
+        last_month_date = today - datetime.timedelta(days=15)
+        last_month_number = last_month_date.month
+
+        dynamic_keyword = f"台灣{last_month_number}月出口"
+
+        # 3. 將動態關鍵字加入到列表中
+        news_keywords.append(dynamic_keyword)
+        
+        # (可選) 在日誌中印出，方便我們驗證
+        print(f"  > [News Engine v2.1] 動態加入新聞關鍵字: '{dynamic_keyword}'")
+
+        rss_urls = [
+            "https://feeds.bloomberg.com/technology/news.rss",  # 彭博科技（正常運作）
+            "https://finance.yahoo.com/rss/topstories",        # Yahoo Finance 財經頭條
+            "https://tw.news.yahoo.com/rss/finance", #Yahoo財經
+            "https://news.google.com/rss/search?q=site:reuters.com+business&hl=en&gl=US&ceid=US:en",  # 路透商業（透過Google News）
+            "https://news.google.com/rss/search?q=台股+OR+台灣股市&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",      # 透過Google News搜索台股相關新聞
+            "https://news.google.com/rss/search?q=site:tw.stock.yahoo.com&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", #Google News的方式來獲取Yahoo奇摩股市新聞
+            "https://feeds.feedburner.com/rsscna/finance",  # 中央社產經證券
+            "https://feeds.marketwatch.com/marketwatch/marketpulse/"  # MarketWatch美股新聞
+        ]
+        raw_news_list = get_finance_news_from_rss(rss_urls, news_keywords)
         
         latest_model_data = get_latest_model_data(db)
         if not latest_model_data:
